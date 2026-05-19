@@ -219,18 +219,40 @@ function buildPin() {
   const dots = Array.from({length:4}, (_,i) =>
     `<div class="pin-dot ${i<pinEntry.length?"filled":""}"></div>`
   ).join("");
+  const keys = [1,2,3,4,5,6,7,8,9,null,0,"back"];
+  const keyBtns = keys.map(k => {
+    if (k===null) return `<div></div>`;
+    if (k==="back") return `<button onclick="pinKey('back')" style="padding:14px;font-size:18px">⌫</button>`;
+    return `<button onclick="pinKey('${k}')" style="padding:14px;font-size:18px">${k}</button>`;
+  }).join("");
   return `
     <div class="card" style="max-width:280px;margin:20px auto;text-align:center">
       <h3>Coach PIN</h3>
       <div class="pin-dots">${dots}</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
-        ${[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map(k =>
-          `<button data-action="pk" data-k="${k}" style="padding:14px;font-size:18px">${k}</button>`
-        ).join("")}
+        ${keyBtns}
       </div>
       ${pinErr ? `<p class="err">${pinErr}</p>` : ""}
       <button data-action="go-home" style="width:100%;margin-top:6px;font-size:12px">Cancel</button>
     </div>`;
+}
+
+function pinKey(k) {
+  if (k==="back") { pinEntry=pinEntry.slice(0,-1); render(buildPin()); return; }
+  if (pinEntry.length>=4) return;
+  pinEntry += String(k);
+  render(buildPin());
+  if (pinEntry.length===4) {
+    setTimeout(()=>{
+      if (pinEntry===appPin) {
+        coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; pinEntry="";
+        render(buildCoach());
+      } else {
+        pinErr="Incorrect PIN"; pinEntry="";
+        render(buildPin());
+      }
+    }, 150);
+  }
 }
 
 function buildCoach() {
