@@ -187,7 +187,6 @@ function showToast(msg) {
 // ── Render ───────────────────────────────────
 function render(html) {
   document.getElementById("app").innerHTML = html;
-  attachEvents();
 }
 
 // ── Screens ──────────────────────────────────
@@ -613,6 +612,7 @@ function attachEvents() {
 // ── Boot ─────────────────────────────────────
 async function boot() {
   document.getElementById("app").innerHTML = `<div class="loading">Loading...</div>`;
+  attachEvents();
   await Promise.all([loadRoster(), loadShots()]);
   render(buildHome());
 }
