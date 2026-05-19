@@ -1,6 +1,5 @@
 // ─────────────────────────────────────────────
-//  Basketball Shooting Tracker
-//  Full app with Supabase backend
+//  Basketball Shooting Tracker — Multi-Team
 // ─────────────────────────────────────────────
 
 const CATS    = ["Form Shooting","Catch & Shoot","1-Dribble Pull-Up","Finishes"];
@@ -26,8 +25,11 @@ function fmtMonth(k) {
 
 // ── App state ────────────────────────────────
 let roster   = [];
-let allShots = [];   // rows from Supabase shots table
-let appPin   = "1234"; // default PIN
+let allShots = [];
+let appPin   = "1234";
+let teamCode = null;   // current team code
+let teamName = "";     // current team name
+let teams    = [];     // all teams (for browse)
 
 let screen      = "home";
 let curPlayer   = null;
@@ -37,76 +39,128 @@ let pinEntry    = "";
 let pinErr      = "";
 let sbPeriod    = "week";
 let sbSection   = "overall";
-let localEdits  = {};   // unsaved edits keyed by "cat-si-di-f"
+let localEdits  = {};
+let joinCodeInput = "";
+let joinErr     = "";
+
+// ── Persist team selection ────────────────────
+function savedTeam() {
+  try { return localStorage.getItem("bball_team"); } catch(e) { return null; }
+}
+function saveTeam(code) {
+  try { localStorage.setItem("bball_team", code); } catch(e) {}
+}
+function clearTeam() {
+  try { localStorage.removeItem("bball_team"); } catch(e) {}
+}
 
 // ── Supabase helpers ─────────────────────────
+async function loadTeams() {
+  const { data, error } = await db.from("teams").select("*").order("name");
+  if (error) { console.error(error); return; }
+  teams = data || [];
+}
+
 async function loadRoster() {
-  const { data, error } = await db.from("roster").select("*").order("name");
+  if (!teamCode) return;
+  const { data, error } = await db.from("roster")
+    .select("*").eq("team_code", teamCode).order("name");
   if (error) { console.error(error); return; }
   roster = (data || []).filter(r => r.name !== "__pin__").map(r => r.name);
-  // PIN is managed separately
+  const pinRow = (data || []).find(r => r.name === "__pin__");
+  if (pinRow && pinRow.value) appPin = String(pinRow.value).trim();
 }
 
 async function loadShots() {
-  const { data, error } = await db.from("shots").select("*");
+  if (!teamCode) return;
+  const { data, error } = await db.from("shots")
+    .select("*").eq("team_code", teamCode);
   if (error) { console.error(error); return; }
   allShots = data || [];
+}
+
+async function createTeam(name, code, pin) {
+  const { error } = await db.from("teams").insert({ name, code, pin });
+  if (error) return error.message;
+  // Insert pin row in roster
+  await db.from("roster").insert({ name:"__pin__", value: pin, team_code: code });
+  teams.push({ name, code, pin });
+  return null;
+}
+
+async function joinTeam(code) {
+  const team = teams.find(t => t.code.toUpperCase() === code.toUpperCase());
+  if (!team) {
+    // Try fetching from DB directly
+    const { data } = await db.from("teams").select("*").ilike("code", code).single();
+    if (!data) return "Team not found. Check the code and try again.";
+    teamCode = data.code.toUpperCase();
+    teamName = data.name;
+    appPin   = data.pin || "1234";
+  } else {
+    teamCode = team.code.toUpperCase();
+    teamName = team.name;
+    appPin   = team.pin || "1234";
+  }
+  saveTeam(teamCode);
+  await loadRoster();
+  await loadShots();
+  return null;
 }
 
 async function saveShot(player, week, cat, spot, day, made, att) {
   const existing = allShots.find(s =>
     s.player===player && s.week===week &&
-    s.category===cat  && s.spot===spot && s.day===day
+    s.category===cat  && s.spot===spot &&
+    s.day===day       && s.team_code===teamCode
   );
   if (existing) {
     const { error } = await db.from("shots")
       .update({ made, attempts: att })
       .eq("id", existing.id);
-    if (!error) {
-      existing.made = made; existing.attempts = att;
-    }
+    if (!error) { existing.made = made; existing.attempts = att; }
   } else {
     const { data, error } = await db.from("shots")
-      .insert({ player, week, category: cat, spot, day, made, attempts: att })
+      .insert({ player, week, category:cat, spot, day, made, attempts:att, team_code:teamCode })
       .select().single();
     if (!error && data) allShots.push(data);
   }
 }
 
 async function addPlayerToDB(name) {
-  const { error } = await db.from("roster").insert({ name });
+  const { error } = await db.from("roster").insert({ name, team_code: teamCode });
   if (error) return error.message;
   if (!roster.includes(name)) roster.push(name);
   return null;
 }
 
 async function removePlayerFromDB(name) {
-  await db.from("roster").delete().eq("name", name);
-  await db.from("shots").delete().eq("player", name);
+  await db.from("roster").delete().eq("name", name).eq("team_code", teamCode);
+  await db.from("shots").delete().eq("player", name).eq("team_code", teamCode);
   roster = roster.filter(n => n !== name);
   allShots = allShots.filter(s => s.player !== name);
 }
 
 async function savePinToDB(pin) {
   appPin = pin;
-  const { data } = await db.from("roster").select("id").eq("name","__pin__").single();
+  // Update teams table
+  await db.from("teams").update({ pin }).eq("code", teamCode);
+  // Update roster pin row
+  const { data } = await db.from("roster").select("id")
+    .eq("name","__pin__").eq("team_code", teamCode).single();
   if (data) {
-    await db.from("roster").update({ value: pin }).eq("name","__pin__");
+    await db.from("roster").update({ value: pin }).eq("id", data.id);
   } else {
-    await db.from("roster").insert({ name:"__pin__", value: pin });
+    await db.from("roster").insert({ name:"__pin__", value: pin, team_code: teamCode });
   }
 }
 
 // ── Stat helpers ─────────────────────────────
-function shotsFor(player, weeks) {
-  return allShots.filter(s => s.player === player && weeks.includes(s.week));
-}
-
 function playerTotals(player, weeks) {
-  const shots = shotsFor(player, weeks);
-  const tm = shots.reduce((a,s) => a + (s.made||0), 0);
-  const ta = shots.reduce((a,s) => a + (s.attempts||0), 0);
-  return { m: tm, a: ta, pct: ta ? Math.round(tm/ta*100) : null };
+  const shots = allShots.filter(s => s.player===player && weeks.includes(s.week));
+  const tm = shots.reduce((a,s) => a+(s.made||0), 0);
+  const ta = shots.reduce((a,s) => a+(s.attempts||0), 0);
+  return { m:tm, a:ta, pct: ta ? Math.round(tm/ta*100) : null };
 }
 
 function playerCatTotals(player, weeks) {
@@ -115,8 +169,8 @@ function playerCatTotals(player, weeks) {
     const shots = allShots.filter(s =>
       s.player===player && weeks.includes(s.week) && s.category===cat
     );
-    const tm = shots.reduce((a,s) => a+(s.made||0), 0);
-    const ta = shots.reduce((a,s) => a+(s.attempts||0), 0);
+    const tm = shots.reduce((a,s)=>a+(s.made||0),0);
+    const ta = shots.reduce((a,s)=>a+(s.attempts||0),0);
     out[cat] = { m:tm, a:ta, pct: ta ? Math.round(tm/ta*100) : null };
   });
   return out;
@@ -128,11 +182,11 @@ function playerBestDay(player, weeks) {
     const shots = allShots.filter(s =>
       s.player===player && weeks.includes(s.week) && s.day===di
     );
-    const tm = shots.reduce((a,s) => a+(s.made||0), 0);
-    const ta = shots.reduce((a,s) => a+(s.attempts||0), 0);
+    const tm = shots.reduce((a,s)=>a+(s.made||0),0);
+    const ta = shots.reduce((a,s)=>a+(s.attempts||0),0);
     if (ta > 0) {
       const p = Math.round(tm/ta*100);
-      if (!best || p > best.pct) best = { day: DAYS[di], pct: p, m: tm, a: ta };
+      if (!best || p > best.pct) best = { day:DAYS[di], pct:p, m:tm, a:ta };
     }
   }
   return best;
@@ -144,7 +198,7 @@ function playerImproved(player) {
   const prev = playerTotals(player, [wks[wks.length-2]]);
   const curr = playerTotals(player, [wks[wks.length-1]]);
   if (prev.pct===null || curr.pct===null) return null;
-  return { diff: curr.pct - prev.pct, curr: curr.pct, prev: prev.pct };
+  return { diff: curr.pct-prev.pct, curr:curr.pct, prev:prev.pct };
 }
 
 function weeksForPeriod(period) {
@@ -159,13 +213,11 @@ function weeksForPeriod(period) {
 }
 
 function getShot(player, week, cat, spot, day) {
-  const key = `${cat}-${spot}-${day}`;
-  if (localEdits[key] !== undefined) return localEdits[key];
   const s = allShots.find(s =>
     s.player===player && s.week===week &&
     s.category===cat  && s.spot===spot && s.day===day
   );
-  return s ? { m: s.made, a: s.attempts } : { m:"", a:"" };
+  return s ? { m:s.made, a:s.attempts } : { m:"", a:"" };
 }
 
 // ── Utility ──────────────────────────────────
@@ -176,6 +228,10 @@ function pctClass(p) {
 }
 function rankMedal(i)  { return ["gold","silver","bronze"][i] || "other"; }
 function rankSymbol(i) { return ["🥇","🥈","🥉"][i] || String(i+1); }
+function genCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({length:6}, ()=>chars[Math.floor(Math.random()*chars.length)]).join("");
+}
 
 function showToast(msg) {
   const t = document.createElement("div");
@@ -189,7 +245,63 @@ function render(html) {
   document.getElementById("app").innerHTML = html;
 }
 
-// ── Screens ──────────────────────────────────
+// ══════════════════════════════════════════════
+//  SCREENS
+// ══════════════════════════════════════════════
+
+// ── Team selection screen ─────────────────────
+function buildTeamSelect() {
+  return `
+    <div class="banner">
+      <div class="banner-quote">"What gets measured, improves"</div>
+      <div class="banner-sub">Basketball Shooting Tracker</div>
+    </div>
+    <div class="card">
+      <h3>Enter your team code</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Your coach will give you a 6-character team code.</p>
+      <div class="row-flex">
+        <input type="text" id="join-code" maxlength="6" placeholder="e.g. HOOPS1"
+          value="${joinCodeInput}"
+          style="flex:1;text-transform:uppercase;font-size:18px;font-weight:500;letter-spacing:3px;text-align:center" />
+        <button onclick="handleJoin()" class="btn-primary">Join</button>
+      </div>
+      ${joinErr ? `<p class="err">${joinErr}</p>` : ""}
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <button onclick="handleNewTeam()" class="btn-primary" style="margin-right:8px">+ Create New Team</button>
+      <button data-action="go-coach-global" style="font-size:12px;color:#888">🔒 Coach</button>
+    </div>`;
+}
+
+// ── Create team screen ────────────────────────
+function buildCreateTeam() {
+  const code = genCode();
+  return `
+    <div class="banner">
+      <div class="banner-quote">"What gets measured, improves"</div>
+      <div class="banner-sub">Create New Team</div>
+    </div>
+    <div class="card">
+      <h3>New Team Setup</h3>
+      <label>Team Name</label>
+      <input type="text" id="new-team-name" placeholder="e.g. Eagles Varsity" style="margin-bottom:10px" />
+      <label>Team Code <span style="font-size:11px;color:#888">(share this with your players)</span></label>
+      <div class="row-flex">
+        <input type="text" id="new-team-code" value="${code}" maxlength="6"
+          style="flex:1;text-transform:uppercase;font-size:16px;font-weight:500;letter-spacing:3px;text-align:center" />
+        <button onclick="document.getElementById('new-team-code').value='${genCode()}'" style="font-size:11px">New Code</button>
+      </div>
+      <label style="margin-top:10px">Coach PIN (4 digits)</label>
+      <input type="password" id="new-team-pin" maxlength="4" placeholder="4-digit PIN" style="width:140px;margin-bottom:14px" />
+      <div id="create-err"></div>
+      <button onclick="handleCreateTeam()" class="btn-primary" style="width:100%;padding:11px">Create Team</button>
+    </div>
+    <div style="text-align:center;margin-top:8px">
+      <button data-action="go-team-select" style="font-size:12px;color:#888">← Back</button>
+    </div>`;
+}
+
+// ── Home screen ───────────────────────────────
 function buildHome() {
   const btns = roster.length === 0
     ? `<p style="color:#888;font-size:13px">No players yet — coach can add players in the coach panel.</p>`
@@ -202,7 +314,11 @@ function buildHome() {
   return `
     <div class="banner">
       <div class="banner-quote">"What gets measured, improves"</div>
-      <div class="banner-sub">Basketball Shooting Tracker</div>
+      <div class="banner-sub">${teamName || "Basketball Shooting Tracker"}</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:11px;color:#888">Team Code: <strong>${teamCode}</strong></div>
+      <button onclick="handleSwitchTeam()" style="font-size:11px;color:#888;padding:4px 8px">Switch Team</button>
     </div>
     <div class="card">
       <h3>Select your name</h3>
@@ -214,6 +330,7 @@ function buildHome() {
     </div>`;
 }
 
+// ── PIN screen ────────────────────────────────
 function buildPin() {
   const dots = Array.from({length:4}, (_,i) =>
     `<div class="pin-dot ${i<pinEntry.length?"filled":""}"></div>`
@@ -227,6 +344,7 @@ function buildPin() {
   return `
     <div class="card" style="max-width:280px;margin:20px auto;text-align:center">
       <h3>Coach PIN</h3>
+      ${teamName ? `<div style="font-size:11px;color:#888;margin-bottom:8px">${teamName}</div>` : ""}
       <div class="pin-dots">${dots}</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
         ${keyBtns}
@@ -244,16 +362,16 @@ function pinKey(k) {
   if (pinEntry.length===4) {
     setTimeout(()=>{
       if (pinEntry===appPin) {
-        coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; pinEntry="";
-        render(buildCoach());
+        coachOpen=true; screen="coach"; coachTab="dashboard";
+        pinErr=""; pinEntry=""; render(buildCoach());
       } else {
-        pinErr="Incorrect PIN"; pinEntry="";
-        render(buildPin());
+        pinErr="Incorrect PIN"; pinEntry=""; render(buildPin());
       }
     }, 150);
   }
 }
 
+// ── Coach panel ───────────────────────────────
 function buildCoach() {
   const tabs = ["dashboard","roster","settings"];
   const nav = `
@@ -264,7 +382,6 @@ function buildCoach() {
         </button>`).join("")}
       <button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button>
     </div>`;
-
   let body = "";
   if (coachTab==="dashboard") body = buildDash();
   if (coachTab==="roster")    body = buildRoster();
@@ -276,7 +393,6 @@ function buildDash() {
   const wk = weekKey();
   const weeks = [wk];
   if (!roster.length) return `<div class="card"><p style="color:#888">Add players in the Roster tab.</p></div>`;
-
   const catShort = ["Form","C&S","Pull-Up","Finish"];
   const rows = roster.map(name => {
     const cats = playerCatTotals(name, weeks);
@@ -288,7 +404,6 @@ function buildDash() {
       <td style="color:#888">${tot.m}/${tot.a}</td>
     </tr>`;
   }).join("");
-
   const catAvgs = CATS.map((cat,ci) => {
     let tm=0,ta=0;
     roster.forEach(n => { const c=playerCatTotals(n,weeks)[cat]; tm+=c.m; ta+=c.a; });
@@ -298,10 +413,9 @@ function buildDash() {
       <div class="metric-val ${pctClass(p)}">${p===null?"—":p+"%"}</div>
     </div>`;
   }).join("");
-
   return `
     <div class="card">
-      <div style="font-size:11px;color:#888;margin-bottom:6px">Week of ${fmtWeek(wk)}</div>
+      <div style="font-size:11px;color:#888;margin-bottom:4px">Team: <strong>${teamName}</strong> · Code: <strong>${teamCode}</strong> · Week of ${fmtWeek(wk)}</div>
       <h3>Team this week</h3>
       <div style="overflow-x:auto">
         <table class="dash">
@@ -327,10 +441,9 @@ function buildRoster() {
           <div style="display:flex;align-items:center;gap:9px">
             <div class="avatar">${initials(n)}</div><span>${n}</span>
           </div>
-          <button class="btn-sm btn-danger" data-action="rm-player" data-name="${n}">🗑 Remove</button>
+          <button class="btn-sm btn-danger" data-action="rm-player" data-name="${n}">🗑</button>
         </div>`).join("")
     : `<p style="color:#888;font-size:13px;padding:6px 0">No players yet.</p>`;
-
   return `
     <div class="card"><h3>Roster (${roster.length})</h3>${items}</div>
     <div class="card">
@@ -346,6 +459,12 @@ function buildRoster() {
 function buildSettings() {
   return `
     <div class="card">
+      <h3>Team Info</h3>
+      <div style="font-size:13px;margin-bottom:4px">Team Name: <strong>${teamName}</strong></div>
+      <div style="font-size:13px;margin-bottom:12px">Team Code: <strong style="letter-spacing:2px;font-size:16px">${teamCode}</strong></div>
+      <p style="font-size:11px;color:#888">Share this code with your players so they can join the team.</p>
+    </div>
+    <div class="card">
       <h3>Change PIN</h3>
       <label>New 4-digit PIN</label>
       <div class="row-flex">
@@ -356,10 +475,10 @@ function buildSettings() {
     </div>`;
 }
 
+// ── Player screen ─────────────────────────────
 function buildPlayer() {
   const name = curPlayer, wk = weekKey();
   const tot = playerTotals(name, [wk]);
-
   let html = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <button data-action="go-home">← Back</button>
@@ -379,13 +498,12 @@ function buildPlayer() {
     <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
       <div class="spot-grid" style="margin-bottom:5px">
         <div></div>
-        ${DAYS.map(d => `<div style="text-align:center;font-size:10px;color:#aaa;font-weight:500">${d}</div>`).join("")}
+        ${DAYS.map(d=>`<div style="text-align:center;font-size:10px;color:#aaa;font-weight:500">${d}</div>`).join("")}
         <div style="text-align:center;font-size:10px;color:#888;font-weight:500">Wk%</div>
       </div>`;
-
     for (let si = 0; si < N_SPOTS; si++) {
       let sm=0, sa=0;
-      const dayInputs = DAYS.map((day,di) => {
+      const dayInputs = DAYS.map((_,di) => {
         const val = getShot(name, wk, cat, si, di);
         sm += parseInt(val.m)||0; sa += parseInt(val.a)||0;
         return `
@@ -417,79 +535,26 @@ function buildPlayer() {
   return html;
 }
 
+// ── Leaderboard ───────────────────────────────
 function buildLeaderboard() {
   const weeks = weeksForPeriod(sbPeriod);
   const wk = weekKey(), mo = monthKey(), yr = yearKey();
   const periodLabel = sbPeriod==="week" ? "Week of "+fmtWeek(wk)
-                    : sbPeriod==="month" ? fmtMonth(mo)
-                    : yr+" Season";
+                    : sbPeriod==="month" ? fmtMonth(mo) : yr+" Season";
 
-  function ranked(arr) {
-    return arr.filter(x => x.val !== null).sort((a,b) => b.val - a.val);
-  }
-
-  const overall  = ranked(roster.map(n => { const t=playerTotals(n,weeks); return {name:n,val:t.pct,sub:`${t.m}/${t.a} shots`}; }));
-  const attempts = ranked(roster.map(n => { const t=playerTotals(n,weeks); return {name:n,val:t.a,sub:`${t.m} made`}; }));
-  const bestDay  = ranked(roster.map(n => { const b=playerBestDay(n,weeks); return {name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""}; }));
-  const improved = ranked(roster.map(n => { const i=playerImproved(n); return {name:n,val:i?i.diff:null,sub:i?`${i.prev}% → ${i.curr}%`:""}; }));
-  const catRanks = CATS.map(cat => ({
-    cat,
-    rows: ranked(roster.map(n => { const c=playerCatTotals(n,weeks)[cat]; return {name:n,val:c.pct,sub:`${c.m}/${c.a}`}; }))
-  }));
-
-  function sbRows(rows, isAtt=false, isDiff=false) {
-    if (!rows.length) return `<div class="sb-no-data">No data yet — get to work! 🏀</div>`;
-    const max = rows[0].val || 1;
-    return rows.map((r,i) => {
-      const barW = Math.round((r.val/max)*100);
-      const valStr = isDiff ? (r.val>0?"+":"")+r.val+"%" : isAtt ? String(r.val) : r.val+"%";
-      return `
-        <div class="sb-row ${i<3?`medal-${i+1}`:""}">
-          <div class="sb-rank ${rankMedal(i)}">${rankSymbol(i)}</div>
-          <div class="sb-avatar">${initials(r.name)}</div>
-          <div class="sb-name">${r.name}</div>
-          <div class="sb-bar-wrap"><div class="sb-bar" style="width:${barW}%"></div></div>
-          <div>
-            <div class="sb-stat">${valStr}</div>
-            <div class="sb-sub">${r.sub}</div>
-          </div>
-        </div>`;
-    }).join("");
-  }
-
-  const sections = [
-    {id:"overall",  label:"Overall %"},
-    {id:"attempts", label:"Most Shots"},
-    {id:"bestday",  label:"Best Day"},
-    {id:"improved", label:"Improved"},
-    {id:"cats",     label:"By Category"},
-  ];
-
-  let content = "";
-  if (sbSection==="overall")  content = `<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>${sbRows(overall)}</div>`;
-  if (sbSection==="attempts") content = `<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>${sbRows(attempts,true)}</div>`;
-  if (sbSection==="bestday")  content = `<div class="sb-section"><div class="sb-section-title">Best single day</div>${sbRows(bestDay)}</div>`;
-  if (sbSection==="improved") content = `<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>${sbRows(improved,false,true)}</div>`;
-  if (sbSection==="cats")     content = catRanks.map(({cat,rows}) => `
-    <div class="sb-section">
-      <div class="sb-section-title">${cat}</div>
-      ${sbRows(rows)}
-    </div>`).join("");
-
-  // ── Shooting King ──
+  // Shooting King
   const kingWeeks = [weekKey()];
   const kingData = roster.map(n => {
     const t = playerTotals(n, kingWeeks);
-    return { name: n, made: t.m, pct: t.pct };
+    return { name:n, made:t.m, pct:t.pct };
   }).filter(p => p.made > 0).sort((a,b) => b.made - a.made);
   const king = kingData[0] || null;
 
-  // Streak — how many consecutive weeks at #1
   let streak = 0;
   if (king) {
     const allWks = [...new Set(allShots.map(s=>s.week))].sort().reverse();
-    for (const wk of allWks) {
-      const wkData = roster.map(n => ({ name:n, made: playerTotals(n,[wk]).m }))
+    for (const wk2 of allWks) {
+      const wkData = roster.map(n => ({ name:n, made:playerTotals(n,[wk2]).m }))
         .filter(p=>p.made>0).sort((a,b)=>b.made-a.made);
       if (wkData[0]?.name === king.name) streak++;
       else break;
@@ -520,10 +585,55 @@ function buildLeaderboard() {
       <div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div>
     </div>`;
 
+  function ranked(arr) {
+    return arr.filter(x=>x.val!==null).sort((a,b)=>b.val-a.val);
+  }
+
+  const overall  = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.pct,sub:`${t.m}/${t.a} shots`};}));
+  const attempts = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:`${t.m} made`};}));
+  const bestDay  = ranked(roster.map(n=>{const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""};}));
+  const improved = ranked(roster.map(n=>{const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?`${i.prev}% → ${i.curr}%`:""};}));
+  const catRanks = CATS.map(cat=>({cat,rows:ranked(roster.map(n=>{const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:`${c.m}/${c.a}`};}))}));
+
+  function sbRows(rows, isAtt=false, isDiff=false) {
+    if (!rows.length) return `<div class="sb-no-data">No data yet — get to work! 🏀</div>`;
+    const max = rows[0].val||1;
+    return rows.map((r,i)=>{
+      const barW = Math.round((r.val/max)*100);
+      const valStr = isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%";
+      return `
+        <div class="sb-row ${i<3?`medal-${i+1}`:""}">
+          <div class="sb-rank ${rankMedal(i)}">${rankSymbol(i)}</div>
+          <div class="sb-avatar">${initials(r.name)}</div>
+          <div class="sb-name">${r.name}</div>
+          <div class="sb-bar-wrap"><div class="sb-bar" style="width:${barW}%"></div></div>
+          <div>
+            <div class="sb-stat">${valStr}</div>
+            <div class="sb-sub">${r.sub}</div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  const sections = [
+    {id:"overall",label:"Overall %"},
+    {id:"attempts",label:"Most Shots"},
+    {id:"bestday",label:"Best Day"},
+    {id:"improved",label:"Improved"},
+    {id:"cats",label:"By Category"},
+  ];
+
+  let content = "";
+  if (sbSection==="overall")  content=`<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>${sbRows(overall)}</div>`;
+  if (sbSection==="attempts") content=`<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>${sbRows(attempts,true)}</div>`;
+  if (sbSection==="bestday")  content=`<div class="sb-section"><div class="sb-section-title">Best single day</div>${sbRows(bestDay)}</div>`;
+  if (sbSection==="improved") content=`<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>${sbRows(improved,false,true)}</div>`;
+  if (sbSection==="cats")     content=catRanks.map(({cat,rows})=>`<div class="sb-section"><div class="sb-section-title">${cat}</div>${sbRows(rows)}</div>`).join("");
+
   return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button data-action="go-home">← Back</button>
-      <span style="font-weight:500;font-size:15px">🏆 Leaderboard</span>
+      <span style="font-weight:500;font-size:15px">🏆 ${teamName} Rankings</span>
     </div>
     ${kingBanner}
     <div class="sb-wrap">
@@ -535,60 +645,79 @@ function buildLeaderboard() {
       </div>
       <div class="period-label">${periodLabel}</div>
       <div class="sb-tabs">
-        ${sections.map(s => `<div class="sb-tab ${sbSection===s.id?"active":""}" data-action="sb-sec" data-s="${s.id}">${s.label}</div>`).join("")}
+        ${sections.map(s=>`<div class="sb-tab ${sbSection===s.id?"active":""}" data-action="sb-sec" data-s="${s.id}">${s.label}</div>`).join("")}
       </div>
       ${content}
     </div>`;
 }
 
+// ── Inline handlers ───────────────────────────
+async function handleJoin() {
+  const code = (document.getElementById("join-code")?.value||"").trim().toUpperCase();
+  if (!code || code.length < 4) { joinErr="Enter a valid team code."; render(buildTeamSelect()); return; }
+  joinCodeInput = code;
+  const btn = document.querySelector("button[onclick='handleJoin()']");
+  if (btn) { btn.disabled=true; btn.textContent="Joining..."; }
+  const err = await joinTeam(code);
+  if (err) { joinErr=err; render(buildTeamSelect()); return; }
+  joinErr=""; joinCodeInput="";
+  screen="home"; render(buildHome());
+}
+
+async function handleCreateTeam() {
+  const name = (document.getElementById("new-team-name")?.value||"").trim();
+  const code = (document.getElementById("new-team-code")?.value||"").trim().toUpperCase();
+  const pin  = (document.getElementById("new-team-pin")?.value||"").trim();
+  const msg  = document.getElementById("create-err");
+  if (!name) { if(msg)msg.innerHTML=`<span class="err">Enter a team name.</span>`; return; }
+  if (code.length < 4) { if(msg)msg.innerHTML=`<span class="err">Code must be at least 4 characters.</span>`; return; }
+  if (!/^\d{4}$/.test(pin)) { if(msg)msg.innerHTML=`<span class="err">PIN must be 4 digits.</span>`; return; }
+  const btn = document.querySelector("button[onclick='handleCreateTeam()']");
+  if (btn) { btn.disabled=true; btn.textContent="Creating..."; }
+  const err = await createTeam(name, code, pin);
+  if (err) { if(msg)msg.innerHTML=`<span class="err">${err}</span>`; if(btn){btn.disabled=false;btn.textContent="Create Team";} return; }
+  teamCode=code; teamName=name; appPin=pin;
+  saveTeam(code);
+  await loadRoster(); await loadShots();
+  screen="coach"; coachOpen=true; coachTab="roster";
+  render(buildCoach());
+}
+
+function handleNewTeam() { screen="create-team"; render(buildCreateTeam()); }
+function handleSwitchTeam() { clearTeam(); teamCode=null; teamName=""; roster=[]; allShots=[]; screen="team-select"; render(buildTeamSelect()); }
+
 // ── Event handling ────────────────────────────
 function attachEvents() {
-  const app = document.getElementById("app");
-
-  app.addEventListener("click", async e => {
+  document.getElementById("app").addEventListener("click", async e => {
     const b = e.target.closest("[data-action]");
     if (!b) return;
     const a = b.dataset.action;
 
-    if (a==="sel-player") { curPlayer=b.dataset.name; screen="player"; localEdits={}; render(buildPlayer()); }
-    if (a==="go-home")    { screen="home"; coachOpen=false; render(buildHome()); }
-    if (a==="go-lb")      { screen="leaderboard"; render(buildLeaderboard()); }
+    if (a==="go-team-select") { screen="team-select"; render(buildTeamSelect()); }
+    if (a==="sel-player")  { curPlayer=b.dataset.name; screen="player"; localEdits={}; render(buildPlayer()); }
+    if (a==="go-home")     { screen="home"; coachOpen=false; render(buildHome()); }
+    if (a==="go-lb")       { screen="leaderboard"; render(buildLeaderboard()); }
     if (a==="go-coach") {
       if (coachOpen) { screen="coach"; render(buildCoach()); }
       else { pinEntry=""; pinErr=""; screen="pin"; render(buildPin()); }
     }
-
-    if (a==="pk") {
-      const k = String(b.dataset.k);
-      if (k==="⌫") { pinEntry=pinEntry.slice(0,-1); render(buildPin()); return; }
-      if (k==="" || k==="undefined") { return; }
-      if (pinEntry.length<4) pinEntry+=k;
-      render(buildPin());
-      if (pinEntry.length===4) {
-        setTimeout(()=>{
-          if (pinEntry===appPin) { coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; pinEntry=""; render(buildCoach()); }
-          else { pinErr="Incorrect PIN"; pinEntry=""; render(buildPin()); }
-        }, 200);
-      }
-    }
-
     if (a==="ctab") { coachTab=b.dataset.t; render(buildCoach()); }
 
     if (a==="add-player") {
+      if (b.disabled) return;
       const inp = document.getElementById("np");
       const name = (inp?.value||"").trim();
       const msg  = document.getElementById("rmsg");
       if (!name) { if(msg)msg.innerHTML=`<span class="err">Enter a name.</span>`; return; }
       if (roster.includes(name)) { if(msg)msg.innerHTML=`<span class="err">Already on roster.</span>`; return; }
-      b.disabled = true;
-      b.textContent = "Adding...";
+      b.disabled=true; b.textContent="Adding...";
       const err = await addPlayerToDB(name);
       if (err) { if(msg)msg.innerHTML=`<span class="err">${err}</span>`; b.disabled=false; b.textContent="Add"; return; }
       render(buildCoach());
     }
 
     if (a==="rm-player") {
-      if (!confirm(`Remove ${b.dataset.name} from the roster?`)) return;
+      if (!confirm(`Remove ${b.dataset.name}?`)) return;
       await removePlayerFromDB(b.dataset.name);
       render(buildCoach());
     }
@@ -603,8 +732,7 @@ function attachEvents() {
 
     if (a==="save-player") {
       if (b.disabled) return;
-      b.disabled=true;
-      b.textContent="Saving...";
+      b.disabled=true; b.textContent="Saving...";
       const wk = weekKey();
       const inputs = document.querySelectorAll("[data-cat][data-si][data-di][data-f]");
       const bySpot = {};
@@ -629,37 +757,39 @@ function attachEvents() {
     if (a==="sb-sec")    { sbSection=b.dataset.s; render(buildLeaderboard()); }
   });
 
-  app.addEventListener("input", e => {
+  document.getElementById("app").addEventListener("input", e => {
     const inp = e.target;
     if (!inp.dataset.cat) return;
-    const {cat,si,di,f} = inp.dataset;
-    const key = `${cat}-${si}-${di}-${f}`;
-    localEdits[key] = { m:undefined, a:undefined, ...localEdits[`${cat}-${si}-${di}-m`] ? { m:localEdits[`${cat}-${si}-${di}-m`] } : {} };
-    localEdits[key] = inp.value;
-
-    const wk = weekKey();
-    const vals = { m:"", a:"" };
-    for (let ff of ["m","a"]) {
-      const k2=`${cat}-${si}-${di}-${ff}`;
-      if (localEdits[k2]!==undefined) vals[ff]=localEdits[k2];
-      else {
-        const s=allShots.find(s=>s.player===curPlayer&&s.week===wk&&s.category===cat&&s.spot===parseInt(si)&&s.day===parseInt(di));
-        if(s) vals[ff]=ff==="m"?s.made:s.attempts;
+    const {cat,si,di} = inp.dataset;
+    const ppId = `pp-${cat.replace(/\W/g,"_")}-${si}`;
+    const el = document.getElementById(ppId);
+    if (el) {
+      const wk = weekKey();
+      let sm=0,sa=0;
+      for (let d=0;d<7;d++) {
+        const mInp = document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="m"]`);
+        const aInp = document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="a"]`);
+        sm+=parseInt(mInp?.value)||0; sa+=parseInt(aInp?.value)||0;
       }
+      const p=sa?Math.round(sm/sa*100):null;
+      el.textContent=p===null?"—":p+"%";
+      el.className="pct-pill "+(p?pctClass(p):"");
     }
-    const sm2=parseInt(vals.m)||0, sa2=parseInt(vals.a)||0;
-    const ppId=`pp-${cat.replace(/\W/g,"_")}-${si}`;
-    const el=document.getElementById(ppId);
-    if(el){const p=sa2?Math.round(sm2/sa2*100):null;el.textContent=p===null?"—":p+"%";el.className="pct-pill "+(p?pctClass(p):"");}
   });
 }
 
 // ── Boot ─────────────────────────────────────
 async function boot() {
-  document.getElementById("app").innerHTML = `<div class="loading">Loading...</div>`;
+  render(`<div class="loading">Loading...</div>`);
   attachEvents();
-  await Promise.all([loadRoster(), loadShots()]);
-  render(buildHome());
+  await loadTeams();
+  const saved = savedTeam();
+  if (saved) {
+    const err = await joinTeam(saved);
+    if (!err) { screen="home"; render(buildHome()); return; }
+  }
+  screen="team-select";
+  render(buildTeamSelect());
 }
 
 boot();
