@@ -476,11 +476,56 @@ function buildLeaderboard() {
       ${sbRows(rows)}
     </div>`).join("");
 
+  // ── Shooting King ──
+  const kingWeeks = [weekKey()];
+  const kingData = roster.map(n => {
+    const t = playerTotals(n, kingWeeks);
+    return { name: n, made: t.m, pct: t.pct };
+  }).filter(p => p.made > 0).sort((a,b) => b.made - a.made);
+  const king = kingData[0] || null;
+
+  // Streak — how many consecutive weeks at #1
+  let streak = 0;
+  if (king) {
+    const allWks = [...new Set(allShots.map(s=>s.week))].sort().reverse();
+    for (const wk of allWks) {
+      const wkData = roster.map(n => ({ name:n, made: playerTotals(n,[wk]).m }))
+        .filter(p=>p.made>0).sort((a,b)=>b.made-a.made);
+      if (wkData[0]?.name === king.name) streak++;
+      else break;
+    }
+  }
+
+  const kingBanner = king ? `
+    <div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">
+      <div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week's Shooting King</div>
+      <div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">${king.name}</div>
+      <div style="display:flex;justify-content:center;gap:20px;margin-top:6px">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:500;color:#fff">${king.made}</div>
+          <div style="font-size:10px;color:#888">Shots Made</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:500;color:#fff">${king.pct===null?"—":king.pct+"%"}</div>
+          <div style="font-size:10px;color:#888">Shooting %</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:500;color:#FFD700">${streak}</div>
+          <div style="font-size:10px;color:#888">Week Streak</div>
+        </div>
+      </div>
+      ${streak >= 2 ? `<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 ${streak} weeks in a row!</div>` : ""}
+    </div>` : `
+    <div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px">
+      <div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div>
+    </div>`;
+
   return `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button data-action="go-home">← Back</button>
       <span style="font-weight:500;font-size:15px">🏆 Leaderboard</span>
     </div>
+    ${kingBanner}
     <div class="sb-wrap">
       <div class="sb-title">🏀 Team Rankings</div>
       <div class="sb-tabs">
