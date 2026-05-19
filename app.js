@@ -43,9 +43,9 @@ let localEdits  = {};   // unsaved edits keyed by "cat-si-di-f"
 async function loadRoster() {
   const { data, error } = await db.from("roster").select("*").order("name");
   if (error) { console.error(error); return; }
-  roster = data.map(r => r.name);
-  const pinRow = data.find(r => r.name === "__pin__");
-  if (pinRow) appPin = pinRow.value || "1234";
+  roster = (data || []).filter(r => r.name !== "__pin__").map(r => r.name);
+  const pinRow = (data || []).find(r => r.name === "__pin__");
+  if (pinRow && pinRow.value) appPin = String(pinRow.value).trim();
 }
 
 async function loadShots() {
@@ -498,7 +498,7 @@ function attachEvents() {
       if (k==="⌫") pinEntry=pinEntry.slice(0,-1);
       else if (k!==""&&pinEntry.length<4) pinEntry+=k;
       if (pinEntry.length===4) {
-        if (pinEntry===appPin) { coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; render(buildCoach()); }
+        if (pinEntry.trim()===String(appPin).trim()) { coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; render(buildCoach()); }
         else { pinErr="Incorrect PIN"; pinEntry=""; render(buildPin()); }
       } else { render(buildPin()); }
     }
