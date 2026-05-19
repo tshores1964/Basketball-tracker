@@ -76,7 +76,7 @@ async function saveShot(player, week, cat, spot, day, made, att) {
 async function addPlayerToDB(name) {
   const { error } = await db.from("roster").insert({ name });
   if (error) return error.message;
-  await loadRoster();
+  if (!roster.includes(name)) roster.push(name);
   return null;
 }
 
@@ -536,8 +536,10 @@ function attachEvents() {
       const msg  = document.getElementById("rmsg");
       if (!name) { if(msg)msg.innerHTML=`<span class="err">Enter a name.</span>`; return; }
       if (roster.includes(name)) { if(msg)msg.innerHTML=`<span class="err">Already on roster.</span>`; return; }
+      b.disabled = true;
+      b.textContent = "Adding...";
       const err = await addPlayerToDB(name);
-      if (err) { if(msg)msg.innerHTML=`<span class="err">${err}</span>`; return; }
+      if (err) { if(msg)msg.innerHTML=`<span class="err">${err}</span>`; b.disabled=false; b.textContent="Add"; return; }
       render(buildCoach());
     }
 
