@@ -558,8 +558,9 @@ function attachEvents() {
     }
 
     if (a==="save-player") {
-      const saveBtn = b;
-      saveBtn.textContent="Saving..."; saveBtn.disabled=true;
+      if (b.disabled) return;
+      b.disabled=true;
+      b.textContent="Saving...";
       const wk = weekKey();
       const inputs = document.querySelectorAll("[data-cat][data-si][data-di][data-f]");
       const bySpot = {};
