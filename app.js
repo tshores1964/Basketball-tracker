@@ -76,7 +76,7 @@ async function saveShot(player, week, cat, spot, day, made, att) {
 async function addPlayerToDB(name) {
   const { error } = await db.from("roster").insert({ name });
   if (error) return error.message;
-  roster.push(name);
+  await loadRoster();
   return null;
 }
 
