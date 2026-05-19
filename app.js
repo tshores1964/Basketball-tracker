@@ -27,7 +27,7 @@ function fmtMonth(k) {
 // ── App state ────────────────────────────────
 let roster   = [];
 let allShots = [];   // rows from Supabase shots table
-let appPin   = "1234";
+let appPin   = "1234"; // default PIN
 
 let screen      = "home";
 let curPlayer   = null;
@@ -44,8 +44,7 @@ async function loadRoster() {
   const { data, error } = await db.from("roster").select("*").order("name");
   if (error) { console.error(error); return; }
   roster = (data || []).filter(r => r.name !== "__pin__").map(r => r.name);
-  const pinRow = (data || []).find(r => r.name === "__pin__");
-  if (pinRow && pinRow.value) appPin = String(pinRow.value).trim();
+  // PIN is managed separately
 }
 
 async function loadShots() {
@@ -494,13 +493,17 @@ function attachEvents() {
     }
 
     if (a==="pk") {
-      const k = b.dataset.k;
-      if (k==="⌫") pinEntry=pinEntry.slice(0,-1);
-      else if (k!==""&&pinEntry.length<4) pinEntry+=k;
+      const k = String(b.dataset.k);
+      if (k==="⌫") { pinEntry=pinEntry.slice(0,-1); render(buildPin()); return; }
+      if (k==="" || k==="undefined") { return; }
+      if (pinEntry.length<4) pinEntry+=k;
+      render(buildPin());
       if (pinEntry.length===4) {
-        if (pinEntry.trim()===String(appPin).trim()) { coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; render(buildCoach()); }
-        else { pinErr="Incorrect PIN"; pinEntry=""; render(buildPin()); }
-      } else { render(buildPin()); }
+        setTimeout(()=>{
+          if (pinEntry===appPin) { coachOpen=true; screen="coach"; coachTab="dashboard"; pinErr=""; pinEntry=""; render(buildCoach()); }
+          else { pinErr="Incorrect PIN"; pinEntry=""; render(buildPin()); }
+        }, 200);
+      }
     }
 
     if (a==="ctab") { coachTab=b.dataset.t; render(buildCoach()); }
