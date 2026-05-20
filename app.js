@@ -166,7 +166,8 @@ function playerTotals(player, weeks) {
   const shots = allShots.filter(s => s.player===player && weeks.includes(s.week));
   const tm = shots.reduce((a,s) => a+(s.made||0), 0);
   const ta = shots.reduce((a,s) => a+(s.attempts||0), 0);
-  return { m:tm, a:ta, pct: ta ? Math.round(tm/ta*100) : null };
+  const exactPct = ta ? (tm/ta*100) : null;
+  return { m:tm, a:ta, pct: ta ? Math.round(tm/ta*100) : null, exactPct };
 }
 
 function playerCatTotals(player, weeks) {
