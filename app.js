@@ -8,9 +8,15 @@ const N_SPOTS = 5;
 
 // ── Date helpers ─────────────────────────────
 function weekKey() {
-  const d = new Date(), mon = new Date(d);
-  mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return mon.toISOString().slice(0, 10);
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun, 1=Mon...
+  const diff = (day === 0) ? -6 : 1 - day; // go back to Monday
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  const y = mon.getFullYear();
+  const m = String(mon.getMonth()+1).padStart(2,"0");
+  const dd = String(mon.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+dd;
 }
 function monthKey() { return new Date().toISOString().slice(0, 7); }
 function yearKey()  { return String(new Date().getFullYear()); }
@@ -552,8 +558,11 @@ function buildLeaderboard() {
 
   let streak = 0;
   if (king) {
-    const allWks = [...new Set(allShots.map(s=>s.week))].sort().reverse();
-    for (const wk2 of allWks) {
+    const currentWk = weekKey();
+    // Only count PAST weeks for streak — not the current week
+    const pastWks = [...new Set(allShots.map(s=>s.week))]
+      .filter(w => w < currentWk).sort().reverse();
+    for (const wk2 of pastWks) {
       const wkData = roster.map(n => ({ name:n, made:playerTotals(n,[wk2]).m }))
         .filter(p=>p.made>0).sort((a,b)=>b.made-a.made);
       if (wkData[0]?.name === king.name) streak++;
