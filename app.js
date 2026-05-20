@@ -744,8 +744,11 @@ function attachEvents() {
       for (const key of Object.keys(bySpot)) {
         const [cat,si,di]=key.split("|");
         const {m,a}=bySpot[key];
-        if (m!==""||a!=="") {
-          await saveShot(curPlayer,wk,cat,parseInt(si),parseInt(di),parseInt(m)||0,parseInt(a)||0);
+        const mVal = parseInt(m);
+        const aVal = parseInt(a);
+        // Only save if BOTH made and attempts have real values entered
+        if (!isNaN(mVal) && !isNaN(aVal) && m!==" " && a!==" " && m!==undefined && a!==undefined) {
+          await saveShot(curPlayer,wk,cat,parseInt(si),parseInt(di),mVal,aVal);
         }
       }
       localEdits={};
