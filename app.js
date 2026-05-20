@@ -596,10 +596,10 @@ function buildLeaderboard() {
     </div>`;
 
   function ranked(arr) {
-    return arr.filter(x=>x.val!==null).sort((a,b)=>b.val-a.val);
+    return arr.filter(x=>x.val!==null).sort((a,b)=>(b.exact||b.val)-(a.exact||a.val));
   }
 
-  const overall  = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.pct,sub:`${t.m}/${t.a} shots`};}));
+  const overall  = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:`${t.m}/${t.a} shots`};}));
   const attempts = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:`${t.m} made`};}));
   const bestDay  = ranked(roster.map(n=>{const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""};}));
   const improved = ranked(roster.map(n=>{const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?`${i.prev}% → ${i.curr}%`:""};}));
