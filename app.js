@@ -261,7 +261,7 @@ function buildTeamSelect() {
   return `
     <div class="banner">
       <div class="banner-quote">"What gets measured, improves"</div>
-      <div class="banner-sub">Basketball Shooting Tracker</div>
+      <div class="banner-sub">Sharpshooter</div>
     </div>
     <div class="card">
       <h3>Enter your team code</h3>
@@ -286,7 +286,7 @@ function buildCreateTeam() {
   return `
     <div class="banner">
       <div class="banner-quote">"What gets measured, improves"</div>
-      <div class="banner-sub">Create New Team</div>
+      <div class="banner-sub">Sharpshooter — Create New Team</div>
     </div>
     <div class="card">
       <h3>New Team Setup</h3>
