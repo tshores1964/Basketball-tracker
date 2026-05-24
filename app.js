@@ -2,7 +2,7 @@
 //  Basketball Shooting Tracker — Multi-Team
 // ─────────────────────────────────────────────
 
-const CATS    = ["Form Shooting","Catch & Shoot","1-Dribble Pull-Up","Finishes"];
+const CATS    = ["Form Shooting","Catch & Shoot","Catch & Shoot 3s","1-Dribble Pull-Up","1-Dribble Pull-Up 3s","Finishes"];
 const DAYS    = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const N_SPOTS = 5;
 
@@ -52,6 +52,7 @@ let allSpotNames = [];  // custom spot names
 let allSpotCounts = [];  // custom spot counts per player/category
 let allDailyCheckins = [];
 let allWeeklyCheckins = [];
+let allWeights = [];  // category weights for King scoring
 let showDailyCheckin = false;  // shows daily check-in after save
 let checkinTemp = {};  // temp storage for in-progress checkin selections
 let joinCodeInput = "";
@@ -211,6 +212,19 @@ function getWeeklyCheckin(player, week) {
   return allWeeklyCheckins.find(c => c.player===player && c.week===week && c.team_code===teamCode);
 }
 
+async function loadWeights() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("category_weights")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allWeights = data || [];
+}
+
+function getWeight(cat) {
+  const w = allWeights.find(x => x.team_code===teamCode && x.category===cat);
+  return w ? parseFloat(w.weight) : 1.0;
+}
+
 async function saveWeeklyCheckin(player, week, alignment, confidence, selftalk) {
   const existing = getWeeklyCheckin(player, week);
   if (existing) {
@@ -256,6 +270,7 @@ async function joinTeam(code) {
   await loadSpotCounts();
   await loadDailyCheckins();
   await loadWeeklyCheckins();
+  await loadWeights();
   return null;
 }
 
@@ -362,6 +377,19 @@ function weeksForPeriod(period) {
     if (period==="year")  return wk.startsWith(key);
     return true;
   });
+}
+
+function playerWeightedMakes(player, weeks) {
+  let total = 0;
+  CATS.forEach(cat => {
+    const w = getWeight(cat);
+    const shots = allShots.filter(s =>
+      s.player===player && weeks.includes(s.week) && s.category===cat
+    );
+    const made = shots.reduce((a,s) => a+(s.made||0), 0);
+    total += made * w;
+  });
+  return total;
 }
 
 function getShot(player, week, cat, spot, day) {
@@ -545,7 +573,7 @@ function buildDash() {
   const wk = weekKey();
   const weeks = [wk];
   if (!roster.length) return `<div class="card"><p style="color:#888">Add players in the Roster tab.</p></div>`;
-  const catShort = ["Form","C&S","Pull-Up","Finish"];
+  const catShort = ["Form","C&S","C&S 3","PU","PU 3","Finish"];
   const rows = roster.map(name => {
     const cats = playerCatTotals(name, weeks);
     const tot  = playerTotals(name, weeks);
@@ -1037,23 +1065,23 @@ function buildLeaderboard() {
   const periodLabel = sbPeriod==="week" ? "Week of "+fmtWeek(wk)
                     : sbPeriod==="month" ? fmtMonth(mo) : yr+" Season";
 
-  // Shooting King
+  // Shooting King — based on WEIGHTED makes
   const kingWeeks = [weekKey()];
   const kingData = roster.map(n => {
     const t = playerTotals(n, kingWeeks);
-    return { name:n, made:t.m, pct:t.pct };
-  }).filter(p => p.made > 0).sort((a,b) => b.made - a.made);
+    const wMade = playerWeightedMakes(n, kingWeeks);
+    return { name:n, made:t.m, weighted:wMade, pct:t.pct };
+  }).filter(p => p.weighted > 0).sort((a,b) => b.weighted - a.weighted);
   const king = kingData[0] || null;
 
   let streak = 0;
   if (king) {
     const currentWk = weekKey();
-    // Only count PAST weeks for streak — not the current week
     const pastWks = [...new Set(allShots.map(s=>s.week))]
       .filter(w => w < currentWk).sort().reverse();
     for (const wk2 of pastWks) {
-      const wkData = roster.map(n => ({ name:n, made:playerTotals(n,[wk2]).m }))
-        .filter(p=>p.made>0).sort((a,b)=>b.made-a.made);
+      const wkData = roster.map(n => ({ name:n, w:playerWeightedMakes(n,[wk2]) }))
+        .filter(p=>p.w>0).sort((a,b)=>b.w-a.w);
       if (wkData[0]?.name === king.name) streak++;
       else break;
     }
@@ -1063,7 +1091,11 @@ function buildLeaderboard() {
     <div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">
       <div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week's Shooting King</div>
       <div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">${king.name}</div>
-      <div style="display:flex;justify-content:center;gap:20px;margin-top:6px">
+      <div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:18px;font-weight:500;color:#FFD700">${Math.round(king.weighted*10)/10}</div>
+          <div style="font-size:10px;color:#888">King Points</div>
+        </div>
         <div style="text-align:center">
           <div style="font-size:18px;font-weight:500;color:#fff">${king.made}</div>
           <div style="font-size:10px;color:#888">Shots Made</div>
@@ -1438,7 +1470,7 @@ async function boot() {
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
-    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins(); screen="home"; render(buildHome()); return; }
+    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins(); await loadWeights(); screen="home"; render(buildHome()); return; }
   }
   screen="team-select";
   render(buildTeamSelect());
