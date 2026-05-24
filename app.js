@@ -1152,6 +1152,51 @@ async function changeSpotCount(cat, delta) {
   const current = getSpotCount(curPlayer, cat);
   const newCount = Math.max(1, Math.min(15, current + delta));
   if (newCount === current) return;
+
+  // Save any pending shot entries before re-rendering
+  const wk = weekKey();
+  const inputs = document.querySelectorAll("[data-cat][data-si][data-di][data-f]");
+  const bySpot = {};
+  inputs.forEach(inp => {
+    const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;
+    if (!bySpot[key]) bySpot[key]={};
+    bySpot[key][inp.dataset.f]=inp.value;
+  });
+  for (const key of Object.keys(bySpot)) {
+    const [c, si, di] = key.split("|");
+    const { m, a } = bySpot[key];
+    const mVal = parseInt(m);
+    const aVal = parseInt(a);
+    if (!isNaN(mVal) && !isNaN(aVal) && m!=="" && a!=="" && m!==undefined && a!==undefined) {
+      await saveShot(curPlayer, wk, c, parseInt(si), parseInt(di), mVal, aVal);
+    }
+  }
+  // Save pending notes
+  const noteInputs = document.querySelectorAll("[data-note-day]");
+  for (const ni of noteInputs) {
+    const day = parseInt(ni.dataset.noteDay);
+    const text = ni.value.trim();
+    const existing = getNote(curPlayer, wk, day);
+    if (text !== existing) {
+      await saveNote(curPlayer, wk, day, text);
+    }
+  }
+  // Save pending spot labels
+  const labelInputs = document.querySelectorAll("[data-spot-label-cat]");
+  const seen = new Set();
+  for (const li of labelInputs) {
+    const c = li.dataset.spotLabelCat;
+    const si = parseInt(li.dataset.spotLabelSi);
+    const k = `${c}|${si}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const label = li.value.trim();
+    const existing = getSpotLabel(curPlayer, c, si);
+    if (label !== existing) {
+      await saveSpotLabel(curPlayer, c, si, label);
+    }
+  }
+
   await saveSpotCount(curPlayer, cat, newCount);
   render(buildPlayer());
 }
