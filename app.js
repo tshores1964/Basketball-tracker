@@ -47,6 +47,7 @@ let sbPeriod    = "week";
 let sbSection   = "overall";
 let localEdits  = {};
 let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // Mon=0...Sun=6
+let allNotes = [];  // notes from DB
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -86,6 +87,32 @@ async function loadShots() {
   allShots = data || [];
 }
 
+async function loadNotes() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("notes")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allNotes = data || [];
+}
+
+function getNote(player, week, day) {
+  const n = allNotes.find(n => n.player===player && n.week===week && n.day===day && n.team_code===teamCode);
+  return n ? n.text : "";
+}
+
+async function saveNote(player, week, day, text) {
+  const existing = allNotes.find(n => n.player===player && n.week===week && n.day===day && n.team_code===teamCode);
+  if (existing) {
+    const { error } = await db.from("notes").update({ text }).eq("id", existing.id);
+    if (!error) existing.text = text;
+  } else {
+    const { data, error } = await db.from("notes")
+      .insert({ player, week, day, team_code: teamCode, text })
+      .select().single();
+    if (!error && data) allNotes.push(data);
+  }
+}
+
 async function createTeam(name, code, pin) {
   const { error } = await db.from("teams").insert({ name, code, pin });
   if (error) return error.message;
@@ -112,6 +139,7 @@ async function joinTeam(code) {
   saveTeam(teamCode);
   await loadRoster();
   await loadShots();
+  await loadNotes();
   return null;
 }
 
@@ -528,6 +556,18 @@ function buildPlayer() {
     const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
     html += `<div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px;text-align:center">${dayLabel}'s Workout</div>`;
 
+    // Daily Notes
+    const noteText = getNote(name, wk, selectedDay);
+    html += `
+    <div class="card" style="padding:.75rem 1rem;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:500;color:#1A3A5C">📝 ${dayLabel} Notes</div>
+        <div style="font-size:10px;color:#888">How did it feel?</div>
+      </div>
+      <textarea data-note-day="${selectedDay}" placeholder="Quick thoughts... form felt great, struggled from left wing, etc."
+        style="width:100%;min-height:60px;padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;background:#fafafa">${noteText.replace(/"/g,'&quot;')}</textarea>
+    </div>`;
+
     CATS.forEach(cat => {
       html += `<div class="cat-hdr">${cat}</div>
       <div class="card" style="padding:.75rem 1rem">
@@ -557,6 +597,20 @@ function buildPlayer() {
     });
   } else {
     // ── DESKTOP: full week grid ──
+    // Daily notes for all days
+    html += `<div class="card" style="padding:.75rem 1rem;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">📝 Daily Notes</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">`;
+    DAYS.forEach((d, di) => {
+      const noteText = getNote(name, wk, di);
+      html += `<div>
+        <div style="font-size:10px;color:#888;font-weight:500;margin-bottom:3px">${d}</div>
+        <textarea data-note-day="${di}" placeholder="Notes..."
+          style="width:100%;min-height:50px;padding:5px 6px;border:0.5px solid #ddd;border-radius:5px;font-size:11px;font-family:inherit;resize:none;background:#fafafa">${noteText.replace(/"/g,'&quot;')}</textarea>
+      </div>`;
+    });
+    html += `</div></div>`;
+
     CATS.forEach(cat => {
       html += `<div class="cat-hdr">${cat}</div>
       <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
@@ -814,9 +868,18 @@ function attachEvents() {
         const {m,a}=bySpot[key];
         const mVal = parseInt(m);
         const aVal = parseInt(a);
-        // Only save if BOTH made and attempts have real values entered
         if (!isNaN(mVal) && !isNaN(aVal) && m!==" " && a!==" " && m!==undefined && a!==undefined) {
           await saveShot(curPlayer,wk,cat,parseInt(si),parseInt(di),mVal,aVal);
+        }
+      }
+      // Save notes
+      const noteInputs = document.querySelectorAll("[data-note-day]");
+      for (const ni of noteInputs) {
+        const day = parseInt(ni.dataset.noteDay);
+        const text = ni.value.trim();
+        const existing = getNote(curPlayer, wk, day);
+        if (text !== existing) {
+          await saveNote(curPlayer, wk, day, text);
         }
       }
       localEdits={};
@@ -863,7 +926,7 @@ async function boot() {
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
-    if (!err) { screen="home"; render(buildHome()); return; }
+    if (!err) { await loadNotes(); screen="home"; render(buildHome()); return; }
   }
   screen="team-select";
   render(buildTeamSelect());
