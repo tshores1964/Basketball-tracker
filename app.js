@@ -586,6 +586,9 @@ function buildPlayer() {
         <div style="font-size:20px;font-weight:500" class="${pctClass(tot.pct)}">${tot.pct===null?"—":tot.pct+"%"}</div>
         <div style="font-size:10px;color:#888">${tot.m}/${tot.a} shots</div>
       </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button data-action="go-summary" class="btn-primary" style="flex:1;padding:8px;font-size:12px">📊 My Summary</button>
     </div>`;
 
   if (isMobile) {
@@ -733,6 +736,144 @@ function buildPlayer() {
 }
 
 // ── Leaderboard ───────────────────────────────
+function buildSummary() {
+  const name = curPlayer;
+  const wk = weekKey(), mo = monthKey(), yr = yearKey();
+
+  // Get all weeks with data for this player
+  const playerWeeks = [...new Set(allShots.filter(s=>s.player===name).map(s=>s.week))].sort();
+  const weekWeeks = [wk];
+  const monthWeeks = playerWeeks.filter(w => w.startsWith(mo));
+  const yearWeeks = playerWeeks.filter(w => w.startsWith(yr));
+
+  // Calculate totals for each period
+  function periodStats(weeks) {
+    const tot = playerTotals(name, weeks);
+    const cats = playerCatTotals(name, weeks);
+    const best = playerBestDay(name, weeks);
+    return { tot, cats, best, wkCount: weeks.length };
+  }
+
+  const weekS = periodStats(weekWeeks);
+  const monthS = periodStats(monthWeeks);
+  const yearS = periodStats(yearWeeks);
+
+  // Trend — compare current week to last week
+  let trend = null;
+  if (playerWeeks.length >= 2) {
+    const prev = playerTotals(name, [playerWeeks[playerWeeks.length-2]]);
+    if (prev.pct !== null && weekS.tot.pct !== null) {
+      trend = weekS.tot.pct - prev.pct;
+    }
+  }
+
+  // Best spot this week (best % across all categories/spots)
+  let bestSpot = null;
+  CATS.forEach(cat => {
+    const nSpots = getSpotCount(name, cat);
+    for (let si = 0; si < nSpots; si++) {
+      let sm=0, sa=0;
+      for (let di=0; di<7; di++) {
+        const v = getShot(name, wk, cat, si, di);
+        sm += parseInt(v.m)||0; sa += parseInt(v.a)||0;
+      }
+      if (sa >= 10) {
+        const p = Math.round(sm/sa*100);
+        if (!bestSpot || p > bestSpot.pct) {
+          const label = getSpotLabel(name, cat, si) || `Spot ${si+1}`;
+          bestSpot = { cat, label, pct: p, m: sm, a: sa };
+        }
+      }
+    }
+  });
+
+  // Reps total per period
+  function periodCard(label, stats, color) {
+    return `
+      <div class="card" style="padding:14px 16px;background:linear-gradient(135deg, ${color}10, transparent)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:11px;color:#888;letter-spacing:.5px;text-transform:uppercase;font-weight:500">${label}</div>
+          <div style="font-size:10px;color:#888">${stats.wkCount} week${stats.wkCount===1?'':'s'}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center">
+          <div>
+            <div style="font-size:22px;font-weight:500;color:${color}">${stats.tot.pct===null?"—":stats.tot.pct+"%"}</div>
+            <div style="font-size:10px;color:#888">Shooting %</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:500;color:#1A3A5C">${stats.tot.m}</div>
+            <div style="font-size:10px;color:#888">Makes</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:500;color:#1A3A5C">${stats.tot.a}</div>
+            <div style="font-size:10px;color:#888">Attempts</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Category breakdown table
+  const catRows = CATS.map(cat => {
+    const wkC = weekS.cats[cat], moC = monthS.cats[cat], yrC = yearS.cats[cat];
+    return `<tr>
+      <td style="text-align:left;font-weight:500;font-size:11px">${cat}</td>
+      <td class="${pctClass(wkC.pct)}">${wkC.pct===null?"—":wkC.pct+"%"}</td>
+      <td class="${pctClass(moC.pct)}">${moC.pct===null?"—":moC.pct+"%"}</td>
+      <td class="${pctClass(yrC.pct)}">${yrC.pct===null?"—":yrC.pct+"%"}</td>
+    </tr>`;
+  }).join("");
+
+  // Trend indicator
+  const trendHtml = trend !== null ? `
+    <div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:500;background:${trend>=0?'#E6F7EC':'#FDECEC'};color:${trend>=0?'#27500A':'#A32D2D'}">
+      ${trend>=0?'▲':'▼'} ${Math.abs(trend)}% vs last week
+    </div>` : '';
+
+  return `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button data-action="go-home">← Back</button>
+      <div class="avatar avatar-lg">${initials(name)}</div>
+      <div style="flex:1">
+        <div style="font-weight:500;font-size:15px">${name}</div>
+        <div style="font-size:11px;color:#888">📊 Summary</div>
+      </div>
+      ${trendHtml}
+    </div>
+
+    ${periodCard('This Week', weekS, '#1A3A5C')}
+    ${periodCard('This Month', monthS, '#2E75B6')}
+    ${periodCard('This Year', yearS, '#1E8449')}
+
+    ${bestSpot ? `
+      <div class="card" style="padding:14px 16px;background:linear-gradient(135deg,#FFF9E6,transparent);border:1px solid #FFD700">
+        <div style="font-size:11px;color:#856404;letter-spacing:.5px;text-transform:uppercase;font-weight:500;margin-bottom:6px">🎯 Best Spot This Week</div>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:500;font-size:14px">${bestSpot.label}</div>
+            <div style="font-size:11px;color:#888">${bestSpot.cat}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:22px;font-weight:500;color:#856404">${bestSpot.pct}%</div>
+            <div style="font-size:10px;color:#888">${bestSpot.m}/${bestSpot.a} shots</div>
+          </div>
+        </div>
+      </div>` : ''}
+
+    <div class="card" style="padding:14px 16px">
+      <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">By Category</div>
+      <table class="dash">
+        <thead><tr>
+          <th style="text-align:left">Category</th>
+          <th>Week</th>
+          <th>Month</th>
+          <th>Year</th>
+        </tr></thead>
+        <tbody>${catRows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function buildLeaderboard() {
   const weeks = weeksForPeriod(sbPeriod);
   const wk = weekKey(), mo = monthKey(), yr = yearKey();
@@ -897,6 +1038,7 @@ function attachEvents() {
     if (a==="sel-player")  { curPlayer=b.dataset.name; screen="player"; localEdits={}; render(buildPlayer()); }
     if (a==="go-home")     { screen="home"; coachOpen=false; render(buildHome()); }
     if (a==="go-lb")       { screen="leaderboard"; render(buildLeaderboard()); }
+    if (a==="go-summary")  { screen="summary"; render(buildSummary()); }
     if (a==="go-coach") {
       if (coachOpen) { screen="coach"; render(buildCoach()); }
       else { pinEntry=""; pinErr=""; screen="pin"; render(buildPin()); }
