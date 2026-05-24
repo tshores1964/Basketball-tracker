@@ -49,6 +49,7 @@ let localEdits  = {};
 let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // Mon=0...Sun=6
 let allNotes = [];  // notes from DB
 let allSpotNames = [];  // custom spot names
+let allSpotCounts = [];  // custom spot counts per player/category
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -140,6 +141,32 @@ async function saveSpotLabel(player, cat, spot, label) {
   }
 }
 
+async function loadSpotCounts() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("spot_counts")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allSpotCounts = data || [];
+}
+
+function getSpotCount(player, cat) {
+  const sc = allSpotCounts.find(s => s.player===player && s.category===cat && s.team_code===teamCode);
+  return sc ? sc.count : N_SPOTS;
+}
+
+async function saveSpotCount(player, cat, count) {
+  const existing = allSpotCounts.find(s => s.player===player && s.category===cat && s.team_code===teamCode);
+  if (existing) {
+    const { error } = await db.from("spot_counts").update({ count }).eq("id", existing.id);
+    if (!error) existing.count = count;
+  } else {
+    const { data, error } = await db.from("spot_counts")
+      .insert({ player, category: cat, team_code: teamCode, count })
+      .select().single();
+    if (!error && data) allSpotCounts.push(data);
+  }
+}
+
 async function createTeam(name, code, pin) {
   const { error } = await db.from("teams").insert({ name, code, pin });
   if (error) return error.message;
@@ -168,6 +195,7 @@ async function joinTeam(code) {
   await loadShots();
   await loadNotes();
   await loadSpotNames();
+  await loadSpotCounts();
   return null;
 }
 
@@ -597,15 +625,23 @@ function buildPlayer() {
     </div>`;
 
     CATS.forEach(cat => {
-      html += `<div class="cat-hdr">${cat}</div>
+      const nSpots = getSpotCount(curPlayer, cat);
+      html += `<div class="cat-hdr" style="display:flex;align-items:center;justify-content:space-between">
+        <span>${cat}</span>
+        <span style="display:flex;gap:4px;align-items:center">
+          <button onclick="changeSpotCount('${cat}',-1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:24px;height:24px;border-radius:4px;font-size:14px;font-weight:500;cursor:pointer">−</button>
+          <span style="font-size:10px;color:#fff;min-width:38px;text-align:center">${nSpots} spots</span>
+          <button onclick="changeSpotCount('${cat}',1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:24px;height:24px;border-radius:4px;font-size:14px;font-weight:500;cursor:pointer">+</button>
+        </span>
+      </div>
       <div class="card" style="padding:.75rem 1rem">
-        <div style="display:grid;grid-template-columns:48px 1fr 1fr 56px;gap:8px;align-items:center;margin-bottom:6px">
+        <div style="display:grid;grid-template-columns:78px 1fr 1fr 50px;gap:6px;align-items:center;margin-bottom:6px">
           <div style="font-size:10px;color:#aaa;font-weight:500">Spot</div>
           <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">Made</div>
           <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">Attempts</div>
           <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">%</div>
         </div>`;
-      for (let si = 0; si < N_SPOTS; si++) {
+      for (let si = 0; si < nSpots; si++) {
         const val = getShot(name, wk, cat, si, selectedDay);
         const mv = parseInt(val.m)||0, av = parseInt(val.a)||0;
         const p = av ? Math.round(mv/av*100) : null;
@@ -643,14 +679,22 @@ function buildPlayer() {
     html += `</div></div>`;
 
     CATS.forEach(cat => {
-      html += `<div class="cat-hdr">${cat}</div>
+      const nSpots = getSpotCount(curPlayer, cat);
+      html += `<div class="cat-hdr" style="display:flex;align-items:center;justify-content:space-between">
+        <span>${cat}</span>
+        <span style="display:flex;gap:4px;align-items:center">
+          <button onclick="changeSpotCount('${cat}',-1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">−</button>
+          <span style="font-size:10px;color:#fff;min-width:40px;text-align:center">${nSpots} spots</span>
+          <button onclick="changeSpotCount('${cat}',1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">+</button>
+        </span>
+      </div>
       <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
         <div class="spot-grid" style="margin-bottom:5px">
           <div></div>
           ${DAYS.map(d=>`<div style="text-align:center;font-size:10px;color:#aaa;font-weight:500">${d}</div>`).join("")}
           <div style="text-align:center;font-size:10px;color:#888;font-weight:500">Wk%</div>
         </div>`;
-      for (let si = 0; si < N_SPOTS; si++) {
+      for (let si = 0; si < nSpots; si++) {
         let sm=0, sa=0;
         const dayInputs = DAYS.map((_,di) => {
           const val = getShot(name, wk, cat, si, di);
@@ -961,6 +1005,15 @@ function attachEvents() {
   });
 }
 
+// ── Change spot count ─────────────────────────
+async function changeSpotCount(cat, delta) {
+  const current = getSpotCount(curPlayer, cat);
+  const newCount = Math.max(1, Math.min(15, current + delta));
+  if (newCount === current) return;
+  await saveSpotCount(curPlayer, cat, newCount);
+  render(buildPlayer());
+}
+
 // ── Day selector for mobile ───────────────────
 function selectDay(d) {
   selectedDay = d;
@@ -975,7 +1028,7 @@ async function boot() {
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
-    if (!err) { await loadNotes(); await loadSpotNames(); screen="home"; render(buildHome()); return; }
+    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); screen="home"; render(buildHome()); return; }
   }
   screen="team-select";
   render(buildTeamSelect());
