@@ -50,6 +50,10 @@ let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // M
 let allNotes = [];  // notes from DB
 let allSpotNames = [];  // custom spot names
 let allSpotCounts = [];  // custom spot counts per player/category
+let allDailyCheckins = [];
+let allWeeklyCheckins = [];
+let showDailyCheckin = false;  // shows daily check-in after save
+let checkinTemp = {};  // temp storage for in-progress checkin selections
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -167,6 +171,60 @@ async function saveSpotCount(player, cat, count) {
   }
 }
 
+// ── Daily Check-ins ──
+async function loadDailyCheckins() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("daily_checkins")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allDailyCheckins = data || [];
+}
+
+function getDailyCheckin(player, week, day) {
+  return allDailyCheckins.find(c => c.player===player && c.week===week && c.day===day && c.team_code===teamCode);
+}
+
+async function saveDailyCheckin(player, week, day, effort, recovery, feeling) {
+  const existing = getDailyCheckin(player, week, day);
+  if (existing) {
+    const { error } = await db.from("daily_checkins")
+      .update({ effort, recovery, feeling }).eq("id", existing.id);
+    if (!error) { existing.effort=effort; existing.recovery=recovery; existing.feeling=feeling; }
+  } else {
+    const { data, error } = await db.from("daily_checkins")
+      .insert({ player, week, day, team_code: teamCode, effort, recovery, feeling })
+      .select().single();
+    if (!error && data) allDailyCheckins.push(data);
+  }
+}
+
+// ── Weekly Check-ins ──
+async function loadWeeklyCheckins() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("weekly_checkins")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allWeeklyCheckins = data || [];
+}
+
+function getWeeklyCheckin(player, week) {
+  return allWeeklyCheckins.find(c => c.player===player && c.week===week && c.team_code===teamCode);
+}
+
+async function saveWeeklyCheckin(player, week, alignment, confidence, selftalk) {
+  const existing = getWeeklyCheckin(player, week);
+  if (existing) {
+    const { error } = await db.from("weekly_checkins")
+      .update({ alignment, confidence, selftalk }).eq("id", existing.id);
+    if (!error) { existing.alignment=alignment; existing.confidence=confidence; existing.selftalk=selftalk; }
+  } else {
+    const { data, error } = await db.from("weekly_checkins")
+      .insert({ player, week, team_code: teamCode, alignment, confidence, selftalk })
+      .select().single();
+    if (!error && data) allWeeklyCheckins.push(data);
+  }
+}
+
 async function createTeam(name, code, pin) {
   const { error } = await db.from("teams").insert({ name, code, pin });
   if (error) return error.message;
@@ -196,6 +254,8 @@ async function joinTeam(code) {
   await loadNotes();
   await loadSpotNames();
   await loadSpotCounts();
+  await loadDailyCheckins();
+  await loadWeeklyCheckins();
   return null;
 }
 
@@ -738,6 +798,97 @@ function buildPlayer() {
 }
 
 // ── Leaderboard ───────────────────────────────
+function buildDailyCheckin() {
+  const name = curPlayer, wk = weekKey();
+  const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
+  const existing = getDailyCheckin(name, wk, selectedDay) || {};
+
+  return `
+    <div style="max-width:520px;margin:0 auto">
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="font-size:11px;color:#888;letter-spacing:1px;text-transform:uppercase;font-weight:500">🧠 Daily Check-In</div>
+        <div style="font-size:13px;color:#1A3A5C;margin-top:4px">${dayLabel} — ${name}</div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Did you bring your best effort today?</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button data-checkin="effort" data-val="Yes" class="${existing.effort==='Yes'?'btn-primary':''}" style="padding:14px;font-size:14px;font-weight:500">✓ Yes</button>
+          <button data-checkin="effort" data-val="No" class="${existing.effort==='No'?'btn-primary':''}" style="padding:14px;font-size:14px;font-weight:500">No</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">When something went wrong, what did you do?</div>
+        <div style="display:grid;gap:6px">
+          <button data-checkin="recovery" data-val="Flushed it" class="${existing.recovery==='Flushed it'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">🔥 Flushed it and moved on</button>
+          <button data-checkin="recovery" data-val="Got down a little" class="${existing.recovery==='Got down a little'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">😬 Got down a little but recovered</button>
+          <button data-checkin="recovery" data-val="Stayed down" class="${existing.recovery==='Stayed down'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">😔 Got down and stayed down</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">One word for how you felt today?</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          ${["Locked In","Solid","Off","Frustrated","Tired","Confident"].map(f =>
+            `<button data-checkin="feeling" data-val="${f}" class="${existing.feeling===f?'btn-primary':''}" style="padding:11px;font-size:13px;font-weight:500">${f}</button>`
+          ).join("")}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button data-action="skip-checkin" style="flex:1;padding:12px;font-size:13px;color:#888">Skip for now</button>
+        <button data-action="save-checkin" class="btn-primary" style="flex:2;padding:12px;font-size:14px;font-weight:500">✓ Save Check-In</button>
+      </div>
+    </div>`;
+}
+
+function buildWeeklyCheckin() {
+  const name = curPlayer, wk = weekKey();
+  const existing = getWeeklyCheckin(name, wk) || {};
+
+  return `
+    <div style="max-width:520px;margin:0 auto">
+      <div style="text-align:center;margin-bottom:18px">
+        <div style="font-size:11px;color:#888;letter-spacing:1px;text-transform:uppercase;font-weight:500">🧠 Weekly Check-In</div>
+        <div style="font-size:13px;color:#1A3A5C;margin-top:4px">Week of ${fmtWeek(wk)} — ${name}</div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:8px">Did your actions this week match your goals?</div>
+        <div style="font-size:11px;color:#888;margin-bottom:14px">Slide honestly. 1 = not at all. 10 = locked in all week.</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <input type="range" id="alignment-slider" min="1" max="10" value="${existing.alignment || 5}"
+            style="flex:1" oninput="document.getElementById('alignment-val').textContent=this.value" />
+          <div id="alignment-val" style="font-size:22px;font-weight:500;color:#1A3A5C;min-width:30px;text-align:center">${existing.alignment || 5}</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Did you compete with confidence this week?</div>
+        <div style="display:grid;gap:6px">
+          <button data-wcheckin="confidence" data-val="Full confidence" class="${existing.confidence==='Full confidence'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">💯 Full confidence — I trusted my work</button>
+          <button data-wcheckin="confidence" data-val="Some confidence" class="${existing.confidence==='Some confidence'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">👍 Some confidence in spots</button>
+          <button data-wcheckin="confidence" data-val="In my head" class="${existing.confidence==='In my head'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">🤔 In my head more than I should've been</button>
+        </div>
+      </div>
+
+      <div class="card" style="padding:18px 16px;margin-bottom:14px">
+        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Rate your self-talk this week.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <button data-wcheckin="selftalk" data-val="Positive" class="${existing.selftalk==='Positive'?'btn-primary':''}" style="padding:11px;font-size:12px;font-weight:500">Positive</button>
+          <button data-wcheckin="selftalk" data-val="Mixed" class="${existing.selftalk==='Mixed'?'btn-primary':''}" style="padding:11px;font-size:12px;font-weight:500">Mixed</button>
+          <button data-wcheckin="selftalk" data-val="Negative" class="${existing.selftalk==='Negative'?'btn-primary':''}" style="padding:11px;font-size:12px;font-weight:500">Negative</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button data-action="go-home" style="flex:1;padding:12px;font-size:13px;color:#888">Cancel</button>
+        <button data-action="save-wcheckin" class="btn-primary" style="flex:2;padding:12px;font-size:14px;font-weight:500">✓ Save Weekly Check-In</button>
+      </div>
+    </div>`;
+}
+
 function buildSummary() {
   const name = curPlayer;
   const wk = weekKey(), mo = monthKey(), yr = yearKey();
@@ -831,6 +982,7 @@ function buildSummary() {
       ${trend>=0?'▲':'▼'} ${Math.abs(trend)}% vs last week
     </div>` : '';
 
+  const hasWeekly = getWeeklyCheckin(name, weekKey());
   return `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <button data-action="go-home">← Back</button>
@@ -841,6 +993,9 @@ function buildSummary() {
       </div>
       ${trendHtml}
     </div>
+    <button data-action="go-weekly-checkin" class="btn-primary" style="width:100%;padding:11px;margin-bottom:12px;font-size:13px;font-weight:500">
+      🧠 ${hasWeekly?'Update':'Start'} Weekly Check-In
+    </button>
 
     ${periodCard('This Week', weekS, '#1A3A5C')}
     ${periodCard('This Month', monthS, '#2E75B6')}
@@ -1121,11 +1276,53 @@ function attachEvents() {
       }
       localEdits={};
       showToast("✓ Numbers saved!");
-      render(buildPlayer());
+      // Show daily check-in after saving
+      screen="daily-checkin";
+      checkinTemp = {};
+      render(buildDailyCheckin());
     }
 
     if (a==="sb-period") { sbPeriod=b.dataset.p; render(buildLeaderboard()); }
     if (a==="sb-sec")    { sbSection=b.dataset.s; render(buildLeaderboard()); }
+
+    if (a==="go-weekly-checkin") {
+      screen="weekly-checkin";
+      checkinTemp = {};
+      render(buildWeeklyCheckin());
+    }
+    if (a==="skip-checkin") {
+      screen="player";
+      checkinTemp = {};
+      render(buildPlayer());
+    }
+    if (a==="save-checkin") {
+      if (b.disabled) return;
+      b.disabled = true;
+      const wk = weekKey();
+      const existing = getDailyCheckin(curPlayer, wk, selectedDay) || {};
+      const effort   = checkinTemp.effort   ?? existing.effort   ?? null;
+      const recovery = checkinTemp.recovery ?? existing.recovery ?? null;
+      const feeling  = checkinTemp.feeling  ?? existing.feeling  ?? null;
+      await saveDailyCheckin(curPlayer, wk, selectedDay, effort, recovery, feeling);
+      checkinTemp = {};
+      showToast("✓ Check-in saved!");
+      screen="player";
+      render(buildPlayer());
+    }
+    if (a==="save-wcheckin") {
+      if (b.disabled) return;
+      b.disabled = true;
+      const wk = weekKey();
+      const existing = getWeeklyCheckin(curPlayer, wk) || {};
+      const align = parseInt(document.getElementById("alignment-slider")?.value) || existing.alignment || 5;
+      const conf  = checkinTemp.confidence ?? existing.confidence ?? null;
+      const st    = checkinTemp.selftalk   ?? existing.selftalk   ?? null;
+      await saveWeeklyCheckin(curPlayer, wk, align, conf, st);
+      checkinTemp = {};
+      showToast("✓ Weekly check-in saved!");
+      screen="summary";
+      render(buildSummary());
+    }
 
     if (a==="spot-plus" || a==="spot-minus") {
       if (b.disabled) return;
@@ -1133,6 +1330,22 @@ function attachEvents() {
       const cat = CATS[parseInt(b.dataset.catidx)];
       const delta = a==="spot-plus" ? 1 : -1;
       await changeSpotCount(cat, delta);
+    }
+  });
+
+  // Daily check-in button clicks
+  document.getElementById("app").addEventListener("click", e => {
+    const btn = e.target.closest("[data-checkin]");
+    if (btn) {
+      checkinTemp[btn.dataset.checkin] = btn.dataset.val;
+      render(buildDailyCheckin());
+      return;
+    }
+    const wbtn = e.target.closest("[data-wcheckin]");
+    if (wbtn) {
+      checkinTemp[wbtn.dataset.wcheckin] = wbtn.dataset.val;
+      render(buildWeeklyCheckin());
+      return;
     }
   });
 
@@ -1225,7 +1438,7 @@ async function boot() {
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
-    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); screen="home"; render(buildHome()); return; }
+    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins(); screen="home"; render(buildHome()); return; }
   }
   screen="team-select";
   render(buildTeamSelect());
