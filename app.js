@@ -48,6 +48,7 @@ let sbSection   = "overall";
 let localEdits  = {};
 let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // Mon=0...Sun=6
 let allNotes = [];  // notes from DB
+let allSpotNames = [];  // custom spot names
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -113,6 +114,32 @@ async function saveNote(player, week, day, text) {
   }
 }
 
+async function loadSpotNames() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("spot_names")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allSpotNames = data || [];
+}
+
+function getSpotLabel(player, cat, spot) {
+  const sn = allSpotNames.find(s => s.player===player && s.category===cat && s.spot===spot && s.team_code===teamCode);
+  return (sn && sn.label) ? sn.label : "";
+}
+
+async function saveSpotLabel(player, cat, spot, label) {
+  const existing = allSpotNames.find(s => s.player===player && s.category===cat && s.spot===spot && s.team_code===teamCode);
+  if (existing) {
+    const { error } = await db.from("spot_names").update({ label }).eq("id", existing.id);
+    if (!error) existing.label = label;
+  } else {
+    const { data, error } = await db.from("spot_names")
+      .insert({ player, category: cat, spot, team_code: teamCode, label })
+      .select().single();
+    if (!error && data) allSpotNames.push(data);
+  }
+}
+
 async function createTeam(name, code, pin) {
   const { error } = await db.from("teams").insert({ name, code, pin });
   if (error) return error.message;
@@ -140,6 +167,7 @@ async function joinTeam(code) {
   await loadRoster();
   await loadShots();
   await loadNotes();
+  await loadSpotNames();
   return null;
 }
 
@@ -581,9 +609,12 @@ function buildPlayer() {
         const val = getShot(name, wk, cat, si, selectedDay);
         const mv = parseInt(val.m)||0, av = parseInt(val.a)||0;
         const p = av ? Math.round(mv/av*100) : null;
+        const customLabel = getSpotLabel(name, cat, si);
         html += `
-          <div style="display:grid;grid-template-columns:48px 1fr 1fr 56px;gap:8px;align-items:center;margin-bottom:8px">
-            <div style="font-size:12px;color:#888;font-weight:500">Spot ${si+1}</div>
+          <div style="display:grid;grid-template-columns:78px 1fr 1fr 50px;gap:6px;align-items:center;margin-bottom:8px">
+            <input type="text" data-spot-label-cat="${cat}" data-spot-label-si="${si}"
+              placeholder="Spot ${si+1}" value="${customLabel.replace(/"/g,'&quot;')}"
+              style="font-size:11px;color:#1A3A5C;font-weight:500;padding:6px 4px;border:0.5px solid #e0e0e0;border-radius:6px;background:#f5f7fa;width:100%" />
             <input type="number" min="0" max="99" inputmode="numeric" placeholder="0" value="${val.m}"
               data-cat="${cat}" data-si="${si}" data-di="${selectedDay}" data-f="m"
               style="padding:10px;text-align:center;font-size:16px;font-weight:500;border:1px solid #ccc;border-radius:8px;width:100%" />
@@ -635,9 +666,12 @@ function buildPlayer() {
             </div>`;
         }).join("");
         const sp = sa ? Math.round(sm/sa*100) : null;
+        const customLabel = getSpotLabel(name, cat, si);
         html += `
           <div class="spot-grid">
-            <div style="font-size:10px;color:#888;font-weight:500">Spot ${si+1}</div>
+            <input type="text" data-spot-label-cat="${cat}" data-spot-label-si="${si}"
+              placeholder="Spot ${si+1}" value="${customLabel.replace(/"/g,'&quot;')}"
+              style="font-size:10px;color:#1A3A5C;font-weight:500;padding:3px 4px;border:0.5px solid #e0e0e0;border-radius:4px;background:#f5f7fa;width:100%" />
             ${dayInputs}
             <div class="pct-pill ${pctClass(sp)}" id="pp-${cat.replace(/\W/g,'_')}-${si}">${sp===null?"—":sp+"%"}</div>
           </div>`;
@@ -882,6 +916,21 @@ function attachEvents() {
           await saveNote(curPlayer, wk, day, text);
         }
       }
+      // Save spot labels
+      const labelInputs = document.querySelectorAll("[data-spot-label-cat]");
+      const seenLabels = new Set();
+      for (const li of labelInputs) {
+        const cat = li.dataset.spotLabelCat;
+        const si = parseInt(li.dataset.spotLabelSi);
+        const key = `${cat}|${si}`;
+        if (seenLabels.has(key)) continue;
+        seenLabels.add(key);
+        const label = li.value.trim();
+        const existing = getSpotLabel(curPlayer, cat, si);
+        if (label !== existing) {
+          await saveSpotLabel(curPlayer, cat, si, label);
+        }
+      }
       localEdits={};
       showToast("✓ Numbers saved!");
       render(buildPlayer());
@@ -926,7 +975,7 @@ async function boot() {
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
-    if (!err) { await loadNotes(); screen="home"; render(buildHome()); return; }
+    if (!err) { await loadNotes(); await loadSpotNames(); screen="home"; render(buildHome()); return; }
   }
   screen="team-select";
   render(buildTeamSelect());
