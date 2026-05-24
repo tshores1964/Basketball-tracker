@@ -46,6 +46,7 @@ let pinErr      = "";
 let sbPeriod    = "week";
 let sbSection   = "overall";
 let localEdits  = {};
+let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // Mon=0...Sun=6
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -486,57 +487,114 @@ function buildSettings() {
 function buildPlayer() {
   const name = curPlayer, wk = weekKey();
   const tot = playerTotals(name, [wk]);
+  const isMobile = window.innerWidth < 700;
+
+  // Header
   let html = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <button data-action="go-home">← Back</button>
       <div class="avatar avatar-lg">${initials(name)}</div>
-      <div>
+      <div style="flex:1">
         <div style="font-weight:500;font-size:15px">${name}</div>
         <div style="font-size:11px;color:#888">Week of ${fmtWeek(wk)}</div>
       </div>
-      <div style="margin-left:auto;text-align:right">
+      <div style="text-align:right">
         <div style="font-size:20px;font-weight:500" class="${pctClass(tot.pct)}">${tot.pct===null?"—":tot.pct+"%"}</div>
         <div style="font-size:10px;color:#888">${tot.m}/${tot.a} shots</div>
       </div>
     </div>`;
 
-  CATS.forEach(cat => {
-    html += `<div class="cat-hdr">${cat}</div>
-    <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
-      <div class="spot-grid" style="margin-bottom:5px">
-        <div></div>
-        ${DAYS.map(d=>`<div style="text-align:center;font-size:10px;color:#aaa;font-weight:500">${d}</div>`).join("")}
-        <div style="text-align:center;font-size:10px;color:#888;font-weight:500">Wk%</div>
-      </div>`;
-    for (let si = 0; si < N_SPOTS; si++) {
-      let sm=0, sa=0;
-      const dayInputs = DAYS.map((_,di) => {
-        const val = getShot(name, wk, cat, si, di);
-        sm += parseInt(val.m)||0; sa += parseInt(val.a)||0;
-        return `
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px">
-            <input type="number" min="0" max="99" placeholder="M" value="${val.m}"
-              data-cat="${cat}" data-si="${si}" data-di="${di}" data-f="m"
-              style="padding:4px 2px;text-align:center;font-size:11px;border:0.5px solid #ddd;border-radius:3px;width:100%" />
-            <input type="number" min="0" max="99" placeholder="A" value="${val.a}"
-              data-cat="${cat}" data-si="${si}" data-di="${di}" data-f="a"
-              style="padding:4px 2px;text-align:center;font-size:11px;border:0.5px solid #ddd;border-radius:3px;background:#f9f9f9;width:100%" />
-          </div>`;
-      }).join("");
-      const sp = sa ? Math.round(sm/sa*100) : null;
-      html += `
-        <div class="spot-grid">
-          <div style="font-size:10px;color:#888;font-weight:500">Spot ${si+1}</div>
-          ${dayInputs}
-          <div class="pct-pill ${pctClass(sp)}" id="pp-${cat.replace(/\W/g,'_')}-${si}">${sp===null?"—":sp+"%"}</div>
-        </div>`;
-    }
+  if (isMobile) {
+    // ── MOBILE: Day selector + single-day view ──
+    html += `<div style="display:flex;gap:4px;margin-bottom:10px;background:#fff;padding:6px;border-radius:10px;border:0.5px solid #e0e0e0;overflow-x:auto">`;
+    DAYS.forEach((d, di) => {
+      let dayM=0, dayA=0;
+      CATS.forEach(cat=>{
+        for (let si=0;si<N_SPOTS;si++) {
+          const v=getShot(name,wk,cat,si,di);
+          dayM+=parseInt(v.m)||0; dayA+=parseInt(v.a)||0;
+        }
+      });
+      const hasData = dayA>0;
+      const isToday = di===selectedDay;
+      html += `<button onclick="selectDay(${di})" style="flex:1;min-width:42px;padding:8px 4px;border:none;border-radius:7px;font-size:11px;font-weight:500;background:${isToday?'#1A3A5C':hasData?'#E6F1FB':'transparent'};color:${isToday?'#fff':hasData?'#0C447C':'#888'};cursor:pointer">
+        <div>${d}</div>
+        ${hasData?`<div style="font-size:9px;margin-top:2px;opacity:.8">${dayM}/${dayA}</div>`:''}
+      </button>`;
+    });
     html += `</div>`;
-  });
+
+    // Show selected day's data
+    const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
+    html += `<div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px;text-align:center">${dayLabel}'s Workout</div>`;
+
+    CATS.forEach(cat => {
+      html += `<div class="cat-hdr">${cat}</div>
+      <div class="card" style="padding:.75rem 1rem">
+        <div style="display:grid;grid-template-columns:48px 1fr 1fr 56px;gap:8px;align-items:center;margin-bottom:6px">
+          <div style="font-size:10px;color:#aaa;font-weight:500">Spot</div>
+          <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">Made</div>
+          <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">Attempts</div>
+          <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">%</div>
+        </div>`;
+      for (let si = 0; si < N_SPOTS; si++) {
+        const val = getShot(name, wk, cat, si, selectedDay);
+        const mv = parseInt(val.m)||0, av = parseInt(val.a)||0;
+        const p = av ? Math.round(mv/av*100) : null;
+        html += `
+          <div style="display:grid;grid-template-columns:48px 1fr 1fr 56px;gap:8px;align-items:center;margin-bottom:8px">
+            <div style="font-size:12px;color:#888;font-weight:500">Spot ${si+1}</div>
+            <input type="number" min="0" max="99" inputmode="numeric" placeholder="0" value="${val.m}"
+              data-cat="${cat}" data-si="${si}" data-di="${selectedDay}" data-f="m"
+              style="padding:10px;text-align:center;font-size:16px;font-weight:500;border:1px solid #ccc;border-radius:8px;width:100%" />
+            <input type="number" min="0" max="99" inputmode="numeric" placeholder="0" value="${val.a}"
+              data-cat="${cat}" data-si="${si}" data-di="${selectedDay}" data-f="a"
+              style="padding:10px;text-align:center;font-size:16px;font-weight:500;border:1px solid #ccc;border-radius:8px;background:#fafafa;width:100%" />
+            <div class="pct-pill ${pctClass(p)}" id="pp-${cat.replace(/\W/g,'_')}-${si}" style="font-size:12px;padding:6px">${p===null?"—":p+"%"}</div>
+          </div>`;
+      }
+      html += `</div>`;
+    });
+  } else {
+    // ── DESKTOP: full week grid ──
+    CATS.forEach(cat => {
+      html += `<div class="cat-hdr">${cat}</div>
+      <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
+        <div class="spot-grid" style="margin-bottom:5px">
+          <div></div>
+          ${DAYS.map(d=>`<div style="text-align:center;font-size:10px;color:#aaa;font-weight:500">${d}</div>`).join("")}
+          <div style="text-align:center;font-size:10px;color:#888;font-weight:500">Wk%</div>
+        </div>`;
+      for (let si = 0; si < N_SPOTS; si++) {
+        let sm=0, sa=0;
+        const dayInputs = DAYS.map((_,di) => {
+          const val = getShot(name, wk, cat, si, di);
+          sm += parseInt(val.m)||0; sa += parseInt(val.a)||0;
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px">
+              <input type="number" min="0" max="99" placeholder="M" value="${val.m}"
+                data-cat="${cat}" data-si="${si}" data-di="${di}" data-f="m"
+                style="padding:4px 2px;text-align:center;font-size:11px;border:0.5px solid #ddd;border-radius:3px;width:100%" />
+              <input type="number" min="0" max="99" placeholder="A" value="${val.a}"
+                data-cat="${cat}" data-si="${si}" data-di="${di}" data-f="a"
+                style="padding:4px 2px;text-align:center;font-size:11px;border:0.5px solid #ddd;border-radius:3px;background:#f9f9f9;width:100%" />
+            </div>`;
+        }).join("");
+        const sp = sa ? Math.round(sm/sa*100) : null;
+        html += `
+          <div class="spot-grid">
+            <div style="font-size:10px;color:#888;font-weight:500">Spot ${si+1}</div>
+            ${dayInputs}
+            <div class="pct-pill ${pctClass(sp)}" id="pp-${cat.replace(/\W/g,'_')}-${si}">${sp===null?"—":sp+"%"}</div>
+          </div>`;
+      }
+      html += `</div>`;
+    });
+  }
 
   html += `
     <button data-action="save-player" class="btn-primary"
-      style="width:100%;padding:12px;margin-top:8px;font-size:14px">
+      style="width:100%;padding:14px;margin-top:10px;font-size:15px;font-weight:500">
       ✓ Save my numbers
     </button>`;
   return html;
@@ -789,6 +847,12 @@ function attachEvents() {
       el.className="pct-pill "+(p?pctClass(p):"");
     }
   });
+}
+
+// ── Day selector for mobile ───────────────────
+function selectDay(d) {
+  selectedDay = d;
+  render(buildPlayer());
 }
 
 // ── Boot ─────────────────────────────────────
