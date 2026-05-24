@@ -629,12 +629,13 @@ function buildPlayer() {
 
     CATS.forEach(cat => {
       const nSpots = getSpotCount(curPlayer, cat);
+      const catIdx = CATS.indexOf(cat);
       html += `<div class="cat-hdr" style="display:flex;align-items:center;justify-content:space-between">
         <span>${cat}</span>
         <span style="display:flex;gap:4px;align-items:center">
-          <button onclick="changeSpotCount('${cat}',-1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:24px;height:24px;border-radius:4px;font-size:14px;font-weight:500;cursor:pointer">−</button>
+          <button data-action="spot-minus" data-catidx="${catIdx}" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:26px;height:26px;border-radius:4px;font-size:15px;font-weight:500;cursor:pointer">−</button>
           <span style="font-size:10px;color:#fff;min-width:38px;text-align:center">${nSpots} spots</span>
-          <button onclick="changeSpotCount('${cat}',1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:24px;height:24px;border-radius:4px;font-size:14px;font-weight:500;cursor:pointer">+</button>
+          <button data-action="spot-plus" data-catidx="${catIdx}" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:26px;height:26px;border-radius:4px;font-size:15px;font-weight:500;cursor:pointer">+</button>
         </span>
       </div>
       <div class="card" style="padding:.75rem 1rem">
@@ -683,12 +684,13 @@ function buildPlayer() {
 
     CATS.forEach(cat => {
       const nSpots = getSpotCount(curPlayer, cat);
+      const catIdxD = CATS.indexOf(cat);
       html += `<div class="cat-hdr" style="display:flex;align-items:center;justify-content:space-between">
         <span>${cat}</span>
         <span style="display:flex;gap:4px;align-items:center">
-          <button onclick="changeSpotCount('${cat}',-1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">−</button>
+          <button data-action="spot-minus" data-catidx="${catIdxD}" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">−</button>
           <span style="font-size:10px;color:#fff;min-width:40px;text-align:center">${nSpots} spots</span>
-          <button onclick="changeSpotCount('${cat}',1)" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">+</button>
+          <button data-action="spot-plus" data-catidx="${catIdxD}" style="background:rgba(255,255,255,.2);color:#fff;border:none;width:22px;height:22px;border-radius:4px;font-size:13px;cursor:pointer">+</button>
         </span>
       </div>
       <div class="card" style="padding:.65rem .9rem;overflow-x:auto">
@@ -1124,6 +1126,14 @@ function attachEvents() {
 
     if (a==="sb-period") { sbPeriod=b.dataset.p; render(buildLeaderboard()); }
     if (a==="sb-sec")    { sbSection=b.dataset.s; render(buildLeaderboard()); }
+
+    if (a==="spot-plus" || a==="spot-minus") {
+      if (b.disabled) return;
+      b.disabled = true;
+      const cat = CATS[parseInt(b.dataset.catidx)];
+      const delta = a==="spot-plus" ? 1 : -1;
+      await changeSpotCount(cat, delta);
+    }
   });
 
   document.getElementById("app").addEventListener("input", e => {
