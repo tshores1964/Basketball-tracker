@@ -919,6 +919,101 @@ function buildPlayer() {
 }
 
 // ── Leaderboard ───────────────────────────────
+function buildProgressChart(playerName) {
+  // Get all weeks where this player has data, sorted ascending
+  const weeks = [...new Set(allShots.filter(s=>s.player===playerName).map(s=>s.week))].sort();
+  if (weeks.length < 2) {
+    return `<div class="card" style="padding:16px;text-align:center;color:#888;font-size:12px">
+      📈 Progress chart will appear after 2+ weeks of data.
+    </div>`;
+  }
+
+  // Build category × week data
+  const catData = {};
+  CATS.forEach(cat => {
+    catData[cat] = weeks.map(wk => {
+      const shots = allShots.filter(s=>s.player===playerName && s.week===wk && s.category===cat);
+      const m = shots.reduce((a,s)=>a+(s.made||0),0);
+      const a = shots.reduce((a,s)=>a+(s.attempts||0),0);
+      return { wk, pct: a>0 ? Math.round(m/a*100) : null, m, a };
+    });
+  });
+
+  // Color palette for each category
+  const CAT_COLORS = {
+    "Form Shooting":        "#888888",
+    "Catch & Shoot":        "#2E75B6",
+    "Catch & Shoot 3s":     "#1A3A5C",
+    "1-Dribble Pull-Up":    "#27500A",
+    "1-Dribble Pull-Up 3s": "#1E8449",
+    "Finishes":             "#B8860B",
+  };
+
+  // Chart dimensions
+  const W = 340, H = 200, padL = 40, padR = 14, padT = 14, padB = 30;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const xStep = weeks.length > 1 ? chartW / (weeks.length - 1) : 0;
+  const xPos = i => padL + i * xStep;
+  const yPct = p => padT + chartH - (p/100) * chartH;
+
+  // Grid lines
+  const yGridLines = [0, 25, 50, 75, 100].map(p => `
+    <line x1="${padL}" y1="${yPct(p)}" x2="${W-padR}" y2="${yPct(p)}" stroke="#eee" stroke-width="0.5" />
+    <text x="${padL-4}" y="${yPct(p)+3}" font-size="9" text-anchor="end" fill="#888">${p}%</text>
+  `).join("");
+
+  // Build a line + dots for each category
+  let allLines = "";
+  CATS.forEach(cat => {
+    const color = CAT_COLORS[cat] || "#888";
+    const pts = catData[cat]
+      .map((d,i) => d.pct !== null ? { x: xPos(i), y: yPct(d.pct), pct: d.pct, m: d.m, a: d.a } : null)
+      .filter(p => p);
+    if (pts.length === 0) return;
+    const poly = pts.map(p=>`${p.x},${p.y}`).join(" ");
+    const dots = pts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${color}" />`).join("");
+    allLines += `<polyline points="${poly}" fill="none" stroke="${color}" stroke-width="1.8" />${dots}`;
+  });
+
+  // X-axis labels — show first, middle, last
+  const labelIdxs = weeks.length <= 4 ? weeks.map((_,i)=>i) : [0, Math.floor((weeks.length-1)/2), weeks.length-1];
+  const xLabels = labelIdxs.map(i => {
+    const d = new Date(weeks[i] + "T12:00:00");
+    const lbl = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    return `<text x="${xPos(i)}" y="${H - 14}" font-size="9" text-anchor="middle" fill="#888">${lbl}</text>`;
+  }).join("");
+
+  // Legend with current % per category
+  const legend = CATS.map(cat => {
+    const color = CAT_COLORS[cat] || "#888";
+    const latest = [...catData[cat]].reverse().find(d => d.pct !== null);
+    const latestPct = latest ? latest.pct + "%" : "—";
+    return `<div style="display:flex;align-items:center;gap:5px;font-size:10px;color:#444">
+      <span style="display:inline-block;width:10px;height:10px;background:${color};border-radius:2px"></span>
+      <span style="flex:1">${cat}</span>
+      <span style="font-weight:500;color:${color}">${latestPct}</span>
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="card" style="padding:14px 16px">
+      <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">📈 Weekly % by Category</div>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">
+        ${yGridLines}
+        ${allLines}
+        ${xLabels}
+      </svg>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;padding-top:10px;border-top:0.5px solid #eee">
+        ${legend}
+      </div>
+      <div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">
+        💡 In-gym shooting % is the ceiling — what you can do here predicts what you'll do in a game
+      </div>
+    </div>`;
+}
+
 function buildDailyCheckin() {
   const name = curPlayer, wk = weekKey();
   const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
@@ -1117,6 +1212,7 @@ function buildSummary() {
     <button data-action="go-weekly-checkin" class="btn-primary" style="width:100%;padding:11px;margin-bottom:12px;font-size:13px;font-weight:500">
       🧠 ${hasWeekly?'Update':'Start'} Weekly Check-In
     </button>
+    ${buildProgressChart(name)}
 
     ${periodCard('This Week', weekS, '#1A3A5C')}
     ${periodCard('This Month', monthS, '#2E75B6')}
