@@ -55,6 +55,7 @@ let allWeeklyCheckins = [];
 let allWeights = [];  // category weights for King scoring
 let showDailyCheckin = false;  // shows daily check-in after save
 let checkinTemp = {};  // temp storage for in-progress checkin selections
+let onboardStep = 0;
 let joinCodeInput = "";
 let joinErr     = "";
 
@@ -65,6 +66,13 @@ function savedTeam() {
 function saveTeam(code) {
   try { localStorage.setItem("bball_team", code); } catch(e) {}
 }
+function hasSeenOnboarding() {
+  try { return localStorage.getItem("bball_seen_onboarding") === "yes"; } catch(e) { return false; }
+}
+function markOnboardingSeen() {
+  try { localStorage.setItem("bball_seen_onboarding", "yes"); } catch(e) {}
+}
+
 function clearTeam() {
   try { localStorage.removeItem("bball_team"); } catch(e) {}
 }
@@ -428,6 +436,91 @@ function render(html) {
 // ══════════════════════════════════════════════
 //  SCREENS
 // ══════════════════════════════════════════════
+
+// ── Onboarding ────────────────────────────────
+function buildOnboarding() {
+  if (onboardStep === 0) {
+    return `
+      <div style="max-width:480px;margin:0 auto;padding:20px 0">
+        <div class="banner" style="padding:24px 18px;margin-bottom:18px">
+          <div style="font-size:36px;margin-bottom:8px">🎯</div>
+          <div style="font-size:22px;font-weight:500;color:#FFD700;margin-bottom:6px">Welcome to Sharpshooter</div>
+          <div style="font-size:12px;opacity:.85;font-style:italic">"What gets measured, improves"</div>
+        </div>
+        <div class="card" style="padding:18px 16px">
+          <div style="font-size:14px;line-height:1.6;color:#333">
+            Sharpshooter is your team's shooting workout tracker — track makes and misses, see your weekly stats, and compete for the <strong>Shooting King</strong> crown.
+          </div>
+          <div style="margin:14px 0;padding:12px;background:#FFF9E6;border-radius:8px;border-left:3px solid #FFD700">
+            <div style="font-size:12px;font-weight:500;color:#856404;margin-bottom:4px">📱 Important</div>
+            <div style="font-size:12px;color:#555">This is a web-based app — you won't find it on the App Store. Add it to your home screen to use it like a regular app.</div>
+          </div>
+          <button data-action="onboard-next" class="btn-primary" style="width:100%;padding:12px;margin-top:8px;font-size:14px">Next →</button>
+          <button data-action="onboard-skip" style="width:100%;padding:8px;margin-top:6px;font-size:12px;color:#888">Skip walkthrough</button>
+        </div>
+        <div style="text-align:center;margin-top:12px;font-size:11px;color:#aaa">Step 1 of 3</div>
+      </div>`;
+  }
+  if (onboardStep === 1) {
+    return `
+      <div style="max-width:480px;margin:0 auto;padding:20px 0">
+        <div style="text-align:center;margin-bottom:14px">
+          <div style="font-size:32px;margin-bottom:6px">📲</div>
+          <div style="font-size:18px;font-weight:500;color:#1A3A5C">Add to Home Screen</div>
+          <div style="font-size:12px;color:#888;margin-top:4px">So you can open it like a regular app</div>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🍎 iPhone (Safari)</div>
+          <ol style="font-size:12px;color:#444;line-height:1.7;padding-left:20px;margin:0">
+            <li>Tap the <strong>Share button</strong> at the bottom (square with arrow ↑)</li>
+            <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+            <li>Name it <strong>Sharpshooter</strong> and tap <strong>Add</strong></li>
+          </ol>
+        </div>
+        <div class="card" style="padding:16px;margin-bottom:14px">
+          <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🤖 Android (Chrome)</div>
+          <ol style="font-size:12px;color:#444;line-height:1.7;padding-left:20px;margin:0">
+            <li>Tap the <strong>three dots</strong> in the top right</li>
+            <li>Tap <strong>"Add to Home Screen"</strong></li>
+            <li>Tap <strong>Add</strong></li>
+          </ol>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button data-action="onboard-back" style="flex:1;padding:12px;font-size:13px">← Back</button>
+          <button data-action="onboard-next" class="btn-primary" style="flex:2;padding:12px;font-size:14px">Next →</button>
+        </div>
+        <div style="text-align:center;margin-top:12px;font-size:11px;color:#aaa">Step 2 of 3</div>
+      </div>`;
+  }
+  // Step 2
+  return `
+    <div style="max-width:480px;margin:0 auto;padding:20px 0">
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:32px;margin-bottom:6px">🔑</div>
+        <div style="font-size:18px;font-weight:500;color:#1A3A5C">Join Your Team</div>
+        <div style="font-size:12px;color:#888;margin-top:4px">Your coach gave you a team code</div>
+      </div>
+      <div class="card" style="padding:18px 16px;margin-bottom:14px">
+        <div style="font-size:13px;color:#444;line-height:1.6;margin-bottom:12px">
+          On the next screen, you'll see a box asking for a team code. Type the 6-character code your coach gave you (like <strong>TODD01</strong>) and tap <strong>Join</strong>.
+        </div>
+        <div style="padding:10px 12px;background:#E6F1FB;border-radius:8px">
+          <div style="font-size:11px;color:#0C447C;margin-bottom:4px">After joining, you can:</div>
+          <div style="font-size:12px;color:#444;line-height:1.7">
+            🏀 Tap your name and enter your daily makes/attempts<br>
+            🏆 Check the leaderboard and Shooting King<br>
+            📊 See your weekly, monthly, yearly summary<br>
+            🧠 Do quick mental performance check-ins
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button data-action="onboard-back" style="flex:1;padding:12px;font-size:13px">← Back</button>
+        <button data-action="onboard-done" class="btn-primary" style="flex:2;padding:12px;font-size:14px">Got it — let's go! 🏀</button>
+      </div>
+      <div style="text-align:center;margin-top:12px;font-size:11px;color:#aaa">Step 3 of 3</div>
+    </div>`;
+}
 
 // ── Team selection screen ─────────────────────
 function buildTeamSelect() {
@@ -1224,6 +1317,14 @@ function attachEvents() {
     const a = b.dataset.action;
 
     if (a==="go-team-select") { screen="team-select"; render(buildTeamSelect()); }
+    if (a==="onboard-next") { onboardStep++; render(buildOnboarding()); }
+    if (a==="onboard-back") { onboardStep--; render(buildOnboarding()); }
+    if (a==="onboard-skip" || a==="onboard-done") {
+      markOnboardingSeen();
+      onboardStep = 0;
+      if (teamCode) { screen="home"; render(buildHome()); }
+      else { screen="team-select"; render(buildTeamSelect()); }
+    }
     if (a==="sel-player")  { curPlayer=b.dataset.name; screen="player"; localEdits={}; render(buildPlayer()); }
     if (a==="go-home")     { screen="home"; coachOpen=false; render(buildHome()); }
     if (a==="go-lb")       { screen="leaderboard"; render(buildLeaderboard()); }
@@ -1467,6 +1568,15 @@ async function boot() {
   render(`<div class="loading">Loading...</div>`);
   attachEvents();
   await loadTeams();
+
+  // First-time visitor — show onboarding
+  if (!hasSeenOnboarding()) {
+    onboardStep = 0;
+    screen = "onboarding";
+    render(buildOnboarding());
+    return;
+  }
+
   const saved = savedTeam();
   if (saved) {
     const err = await joinTeam(saved);
