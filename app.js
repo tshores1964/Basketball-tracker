@@ -1471,9 +1471,15 @@ function attachEvents() {
     if(a==="go-about"){screen="about";aboutTab="coaches";render(buildAbout());}
     if(a==="about-tab"){aboutTab=b.dataset.t;render(buildAbout());}
     if(a==="share-coach"){
-      const msg=`Hey Coach — check out Sharpshooter. It's a free basketball shooting tracker built for teams. Players log their workout makes/attempts, compete for the Shooting King crown, and do mental performance check-ins after every session. There's also a cross-team league so your team can compete against others.\n\nOpen it at: basketball-tracker-nine.vercel.app\n\nIt's currently free MVP access. Full app launches on the App Store later this year at $9.99/month per team.`;
-      if(navigator.share){navigator.share({title:'Sharpshooter — Basketball Shooting Tracker',text:msg,url:'https://basketball-tracker-nine.vercel.app'}).catch(()=>{});}
-      else{navigator.clipboard.writeText(msg).then(()=>showToast('✓ Copied to clipboard!')).catch(()=>showToast('Copy the URL: basketball-tracker-nine.vercel.app'));}
+      const subject="Free Basketball Shooting Tracker — Sharpshooter";
+      const msg=`Coach,\n\nI want to share something I've been building for my team that I think you'll find useful.\n\nIt's called Sharpshooter — a free basketball shooting tracker built specifically for team workouts. Players log their makes and attempts by category and spot, compete for the Shooting King crown each week, and do quick mental performance check-ins after every session. You get a live dashboard of your whole team's shooting percentages by category, plus the ability to leave private feedback for each player.\n\nHere's how to get started in about 5 minutes:\n\n1. Open basketball-tracker-nine.vercel.app on your phone\n2. Tap "Create New Team" and set up your roster\n3. Share your team code with your players\n4. Players join, set their PIN, and start logging\n\nAdd it to your home screen and it works just like a regular app — no App Store required.\n\nIt's completely free right now. We're in early MVP testing before a full App Store launch later this year. I'd love to have another team on it and get your feedback.\n\nAny questions, just reply.\n\nCoach Todd Shores\nBobcat Basketball\nOrange, TX`;
+      if(navigator.share){
+        navigator.share({title:subject, text:msg, url:'https://basketball-tracker-nine.vercel.app'}).catch(()=>{});
+      } else {
+        // Fallback: open mailto link
+        const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
+        window.open(mailtoLink, '_blank');
+      }
     }
     if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
     if(a==="go-league"){screen="league";buildLeague();}
