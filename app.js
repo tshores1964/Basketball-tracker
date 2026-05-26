@@ -9,8 +9,8 @@ const N_SPOTS = 5;
 // ── Date helpers ─────────────────────────────
 function weekKey() {
   const d = new Date();
-  const day = d.getDay(); // 0=Sun, 1=Mon...
-  const diff = (day === 0) ? -6 : 1 - day; // go back to Monday
+  const day = d.getDay();
+  const diff = (day === 0) ? -6 : 1 - day;
   const mon = new Date(d);
   mon.setDate(d.getDate() + diff);
   const y = mon.getFullYear();
@@ -33,9 +33,9 @@ function fmtMonth(k) {
 let roster   = [];
 let allShots = [];
 let appPin   = "1234";
-let teamCode = null;   // current team code
-let teamName = "";     // current team name
-let teams    = [];     // all teams (for browse)
+let teamCode = null;
+let teamName = "";
+let teams    = [];
 
 let screen      = "home";
 let curPlayer   = null;
@@ -43,21 +43,51 @@ let coachOpen   = false;
 let coachTab    = "dashboard";
 let pinEntry    = "";
 let pinErr      = "";
+let pinMode     = "coach";   // "coach" | "player-setup" | "player-enter" | "player-confirm"
+let pinSetupFirst = "";      // stores first entry during player PIN setup
 let sbPeriod    = "week";
 let sbSection   = "overall";
 let localEdits  = {};
-let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;  // Mon=0...Sun=6
-let allNotes = [];  // notes from DB
-let allSpotNames = [];  // custom spot names
-let allSpotCounts = [];  // custom spot counts per player/category
+let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+let allNotes = [];
+let allSpotNames = [];
+let allSpotCounts = [];
 let allDailyCheckins = [];
 let allWeeklyCheckins = [];
-let allWeights = [];  // category weights for King scoring
-let showDailyCheckin = false;  // shows daily check-in after save
-let checkinTemp = {};  // temp storage for in-progress checkin selections
+let allWeights = [];
+let allPlayerPins = [];
+let showDailyCheckin = false;
+let checkinTemp = {};
 let onboardStep = 0;
 let joinCodeInput = "";
 let joinErr     = "";
+
+// Session-based unlocked players (cleared when browser closes)
+function getUnlockedPlayers() {
+  try {
+    const raw = sessionStorage.getItem("bball_unlocked");
+    return raw ? JSON.parse(raw) : {};
+  } catch(e) { return {}; }
+}
+function setUnlockedPlayer(player, teamCode) {
+  try {
+    const u = getUnlockedPlayers();
+    u[teamCode + "|" + player] = true;
+    sessionStorage.setItem("bball_unlocked", JSON.stringify(u));
+  } catch(e) {}
+}
+function isPlayerUnlocked(player, teamCode) {
+  const u = getUnlockedPlayers();
+  return !!u[teamCode + "|" + player];
+}
+function unlockAllPlayers() {
+  // Coach override — unlock all players for this team
+  try {
+    const u = getUnlockedPlayers();
+    roster.forEach(p => { u[teamCode + "|" + p] = true; });
+    sessionStorage.setItem("bball_unlocked", JSON.stringify(u));
+  } catch(e) {}
+}
 
 // ── Persist team selection ────────────────────
 function savedTeam() {
@@ -72,7 +102,6 @@ function hasSeenOnboarding() {
 function markOnboardingSeen() {
   try { localStorage.setItem("bball_seen_onboarding", "yes"); } catch(e) {}
 }
-
 function clearTeam() {
   try { localStorage.removeItem("bball_team"); } catch(e) {}
 }
@@ -180,6 +209,33 @@ async function saveSpotCount(player, cat, count) {
   }
 }
 
+// ── Player PINs ──────────────────────────────
+async function loadPlayerPins() {
+  if (!teamCode) return;
+  const { data, error } = await db.from("player_pins")
+    .select("*").eq("team_code", teamCode);
+  if (error) { console.error(error); return; }
+  allPlayerPins = data || [];
+}
+
+function getPlayerPin(player) {
+  const row = allPlayerPins.find(p => p.player === player && p.team_code === teamCode);
+  return row ? row.pin : null;
+}
+
+async function savePlayerPin(player, pin) {
+  const existing = allPlayerPins.find(p => p.player === player && p.team_code === teamCode);
+  if (existing) {
+    const { error } = await db.from("player_pins").update({ pin }).eq("id", existing.id);
+    if (!error) existing.pin = pin;
+  } else {
+    const { data, error } = await db.from("player_pins")
+      .insert({ player, team_code: teamCode, pin })
+      .select().single();
+    if (!error && data) allPlayerPins.push(data);
+  }
+}
+
 // ── Daily Check-ins ──
 async function loadDailyCheckins() {
   if (!teamCode) return;
@@ -250,7 +306,6 @@ async function saveWeeklyCheckin(player, week, alignment, confidence, selftalk) 
 async function createTeam(name, code, pin) {
   const { error } = await db.from("teams").insert({ name, code, pin });
   if (error) return error.message;
-  // Insert pin row in roster
   await db.from("roster").insert({ name:"__pin__", value: pin, team_code: code });
   teams.push({ name, code, pin });
   return null;
@@ -259,7 +314,6 @@ async function createTeam(name, code, pin) {
 async function joinTeam(code) {
   const team = teams.find(t => t.code.toUpperCase() === code.toUpperCase());
   if (!team) {
-    // Try fetching from DB directly
     const { data } = await db.from("teams").select("*").ilike("code", code).single();
     if (!data) return "Team not found. Check the code and try again.";
     teamCode = data.code.toUpperCase();
@@ -279,6 +333,7 @@ async function joinTeam(code) {
   await loadDailyCheckins();
   await loadWeeklyCheckins();
   await loadWeights();
+  await loadPlayerPins();
   return null;
 }
 
@@ -311,15 +366,15 @@ async function addPlayerToDB(name) {
 async function removePlayerFromDB(name) {
   await db.from("roster").delete().eq("name", name).eq("team_code", teamCode);
   await db.from("shots").delete().eq("player", name).eq("team_code", teamCode);
+  await db.from("player_pins").delete().eq("player", name).eq("team_code", teamCode);
   roster = roster.filter(n => n !== name);
   allShots = allShots.filter(s => s.player !== name);
+  allPlayerPins = allPlayerPins.filter(p => p.player !== name);
 }
 
 async function savePinToDB(pin) {
   appPin = pin;
-  // Update teams table
   await db.from("teams").update({ pin }).eq("code", teamCode);
-  // Update roster pin row
   const { data } = await db.from("roster").select("id")
     .eq("name","__pin__").eq("team_code", teamCode).single();
   if (data) {
@@ -492,7 +547,6 @@ function buildOnboarding() {
         <div style="text-align:center;margin-top:12px;font-size:11px;color:#aaa">Step 2 of 3</div>
       </div>`;
   }
-  // Step 2
   return `
     <div style="max-width:480px;margin:0 auto;padding:20px 0">
       <div style="text-align:center;margin-bottom:14px">
@@ -578,11 +632,18 @@ function buildCreateTeam() {
 function buildHome() {
   const btns = roster.length === 0
     ? `<p style="color:#888;font-size:13px">No players yet — coach can add players in the coach panel.</p>`
-    : roster.map(n => `
+    : roster.map(n => {
+        const hasPin = getPlayerPin(n) !== null;
+        const unlocked = isPlayerUnlocked(n, teamCode);
+        return `
         <button class="player-btn" data-action="sel-player" data-name="${n}">
           <div class="avatar">${initials(n)}</div>
-          <span>${n}</span>
-        </button>`).join("");
+          <span style="flex:1">${n}</span>
+          <span style="font-size:11px;color:${unlocked ? '#27500A' : hasPin ? '#888' : '#2E75B6'};margin-left:4px">
+            ${unlocked ? '🔓' : hasPin ? '🔒' : '🔑 Set PIN'}
+          </span>
+        </button>`;
+      }).join("");
 
   return `
     <div class="banner">
@@ -614,16 +675,36 @@ function buildPin() {
     if (k==="back") return `<button onclick="pinKey('back')" style="padding:14px;font-size:18px">⌫</button>`;
     return `<button onclick="pinKey('${k}')" style="padding:14px;font-size:18px">${k}</button>`;
   }).join("");
+
+  let title = "Coach PIN";
+  let subtitle = teamName ? `<div style="font-size:11px;color:#888;margin-bottom:8px">${teamName}</div>` : "";
+  let hint = "";
+
+  if (pinMode === "player-setup") {
+    title = `Set Your PIN`;
+    subtitle = `<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;
+    hint = `<div style="font-size:11px;color:#888;margin-top:4px">Choose a 4-digit PIN to protect your data.</div>`;
+  } else if (pinMode === "player-confirm") {
+    title = `Confirm Your PIN`;
+    subtitle = `<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;
+    hint = `<div style="font-size:11px;color:#888;margin-top:4px">Enter the same PIN again.</div>`;
+  } else if (pinMode === "player-enter") {
+    title = `Enter Your PIN`;
+    subtitle = `<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;
+    hint = `<div style="font-size:11px;color:#888;margin-top:4px">Or ask your coach to unlock it.</div>`;
+  }
+
   return `
     <div class="card" style="max-width:280px;margin:20px auto;text-align:center">
-      <h3>Coach PIN</h3>
-      ${teamName ? `<div style="font-size:11px;color:#888;margin-bottom:8px">${teamName}</div>` : ""}
+      <h3>${title}</h3>
+      ${subtitle}
       <div class="pin-dots">${dots}</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
         ${keyBtns}
       </div>
       ${pinErr ? `<p class="err">${pinErr}</p>` : ""}
-      <button data-action="go-home" style="width:100%;margin-top:6px;font-size:12px">Cancel</button>
+      ${hint}
+      <button data-action="go-home" style="width:100%;margin-top:10px;font-size:12px">Cancel</button>
     </div>`;
 }
 
@@ -633,12 +714,63 @@ function pinKey(k) {
   pinEntry += String(k);
   render(buildPin());
   if (pinEntry.length===4) {
-    setTimeout(()=>{
-      if (pinEntry===appPin) {
-        coachOpen=true; screen="coach"; coachTab="dashboard";
-        pinErr=""; pinEntry=""; render(buildCoach());
-      } else {
-        pinErr="Incorrect PIN"; pinEntry=""; render(buildPin());
+    setTimeout(async ()=>{
+      // ── Coach PIN ──
+      if (pinMode === "coach") {
+        if (pinEntry===appPin) {
+          coachOpen=true; screen="coach"; coachTab="dashboard";
+          unlockAllPlayers();
+          pinErr=""; pinEntry=""; render(buildCoach());
+        } else {
+          pinErr="Incorrect PIN"; pinEntry=""; render(buildPin());
+        }
+        return;
+      }
+
+      // ── Player PIN setup — first entry ──
+      if (pinMode === "player-setup") {
+        pinSetupFirst = pinEntry;
+        pinEntry = "";
+        pinMode = "player-confirm";
+        pinErr = "";
+        render(buildPin());
+        return;
+      }
+
+      // ── Player PIN setup — confirm ──
+      if (pinMode === "player-confirm") {
+        if (pinEntry === pinSetupFirst) {
+          await savePlayerPin(curPlayer, pinEntry);
+          setUnlockedPlayer(curPlayer, teamCode);
+          pinErr=""; pinEntry=""; pinSetupFirst="";
+          pinMode="coach";
+          showToast("✓ PIN set! You're in.");
+          screen="player";
+          render(buildPlayer());
+        } else {
+          pinErr="PINs don't match — try again";
+          pinEntry="";
+          pinMode="player-setup";
+          pinSetupFirst="";
+          render(buildPin());
+        }
+        return;
+      }
+
+      // ── Player PIN entry ──
+      if (pinMode === "player-enter") {
+        const stored = getPlayerPin(curPlayer);
+        if (pinEntry === stored || pinEntry === appPin) {
+          // appPin also works as coach override
+          setUnlockedPlayer(curPlayer, teamCode);
+          pinErr=""; pinEntry="";
+          pinMode="coach";
+          screen="player";
+          render(buildPlayer());
+        } else {
+          pinErr="Incorrect PIN"; pinEntry=""; render(buildPin());
+        }
+        return;
       }
     }, 150);
   }
@@ -709,13 +841,23 @@ function buildDash() {
 
 function buildRoster() {
   const items = roster.length
-    ? roster.map(n => `
+    ? roster.map(n => {
+        const hasPin = getPlayerPin(n) !== null;
+        return `
         <div class="roster-item">
           <div style="display:flex;align-items:center;gap:9px">
-            <div class="avatar">${initials(n)}</div><span>${n}</span>
+            <div class="avatar">${initials(n)}</div>
+            <div>
+              <div>${n}</div>
+              <div style="font-size:10px;color:${hasPin?'#888':'#2E75B6'}">${hasPin ? '🔒 PIN set' : '🔑 No PIN yet'}</div>
+            </div>
           </div>
-          <button class="btn-sm btn-danger" data-action="rm-player" data-name="${n}">🗑</button>
-        </div>`).join("")
+          <div style="display:flex;gap:6px;align-items:center">
+            ${hasPin ? `<button class="btn-sm" data-action="reset-player-pin" data-name="${n}" style="font-size:11px">Reset PIN</button>` : ""}
+            <button class="btn-sm btn-danger" data-action="rm-player" data-name="${n}">🗑</button>
+          </div>
+        </div>`;
+      }).join("")
     : `<p style="color:#888;font-size:13px;padding:6px 0">No players yet.</p>`;
   return `
     <div class="card"><h3>Roster (${roster.length})</h3>${items}</div>
@@ -738,7 +880,7 @@ function buildSettings() {
       <p style="font-size:11px;color:#888">Share this code with your players so they can join the team.</p>
     </div>
     <div class="card">
-      <h3>Change PIN</h3>
+      <h3>Change Coach PIN</h3>
       <label>New 4-digit PIN</label>
       <div class="row-flex">
         <input type="password" id="npin" maxlength="4" placeholder="New PIN" style="width:130px" />
@@ -754,7 +896,6 @@ function buildPlayer() {
   const tot = playerTotals(name, [wk]);
   const isMobile = window.innerWidth < 700;
 
-  // Header
   let html = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <button data-action="go-home">← Back</button>
@@ -773,7 +914,6 @@ function buildPlayer() {
     </div>`;
 
   if (isMobile) {
-    // ── MOBILE: Day selector + single-day view ──
     html += `<div style="display:flex;gap:4px;margin-bottom:10px;background:#fff;padding:6px;border-radius:10px;border:0.5px solid #e0e0e0;overflow-x:auto">`;
     DAYS.forEach((d, di) => {
       let dayM=0, dayA=0;
@@ -792,11 +932,9 @@ function buildPlayer() {
     });
     html += `</div>`;
 
-    // Show selected day's data
     const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
     html += `<div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px;text-align:center">${dayLabel}'s Workout</div>`;
 
-    // Daily Notes
     const noteText = getNote(name, wk, selectedDay);
     html += `
     <div class="card" style="padding:.75rem 1rem;margin-bottom:10px">
@@ -848,8 +986,7 @@ function buildPlayer() {
       html += `</div>`;
     });
   } else {
-    // ── DESKTOP: full week grid ──
-    // Daily notes for all days
+    // Desktop
     html += `<div class="card" style="padding:.75rem 1rem;margin-bottom:10px">
       <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">📝 Daily Notes</div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">`;
@@ -918,17 +1055,14 @@ function buildPlayer() {
   return html;
 }
 
-// ── Leaderboard ───────────────────────────────
+// ── Progress chart ────────────────────────────
 function buildProgressChart(playerName) {
-  // Get all weeks where this player has data, sorted ascending
   const weeks = [...new Set(allShots.filter(s=>s.player===playerName).map(s=>s.week))].sort();
   if (weeks.length < 2) {
     return `<div class="card" style="padding:16px;text-align:center;color:#888;font-size:12px">
       📈 Progress chart will appear after 2+ weeks of data.
     </div>`;
   }
-
-  // Build category × week data
   const catData = {};
   CATS.forEach(cat => {
     catData[cat] = weeks.map(wk => {
@@ -938,8 +1072,6 @@ function buildProgressChart(playerName) {
       return { wk, pct: a>0 ? Math.round(m/a*100) : null, m, a };
     });
   });
-
-  // Color palette for each category
   const CAT_COLORS = {
     "Form Shooting":        "#888888",
     "Catch & Shoot":        "#2E75B6",
@@ -948,44 +1080,33 @@ function buildProgressChart(playerName) {
     "1-Dribble Pull-Up 3s": "#1E8449",
     "Finishes":             "#B8860B",
   };
-
-  // Chart dimensions
   const W = 340, H = 200, padL = 40, padR = 14, padT = 14, padB = 30;
   const chartW = W - padL - padR;
   const chartH = H - padT - padB;
-
   const xStep = weeks.length > 1 ? chartW / (weeks.length - 1) : 0;
   const xPos = i => padL + i * xStep;
   const yPct = p => padT + chartH - (p/100) * chartH;
-
-  // Grid lines
   const yGridLines = [0, 25, 50, 75, 100].map(p => `
     <line x1="${padL}" y1="${yPct(p)}" x2="${W-padR}" y2="${yPct(p)}" stroke="#eee" stroke-width="0.5" />
     <text x="${padL-4}" y="${yPct(p)+3}" font-size="9" text-anchor="end" fill="#888">${p}%</text>
   `).join("");
-
-  // Build a line + dots for each category
   let allLines = "";
   CATS.forEach(cat => {
     const color = CAT_COLORS[cat] || "#888";
     const pts = catData[cat]
-      .map((d,i) => d.pct !== null ? { x: xPos(i), y: yPct(d.pct), pct: d.pct, m: d.m, a: d.a } : null)
+      .map((d,i) => d.pct !== null ? { x: xPos(i), y: yPct(d.pct), pct: d.pct } : null)
       .filter(p => p);
     if (pts.length === 0) return;
     const poly = pts.map(p=>`${p.x},${p.y}`).join(" ");
     const dots = pts.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${color}" />`).join("");
     allLines += `<polyline points="${poly}" fill="none" stroke="${color}" stroke-width="1.8" />${dots}`;
   });
-
-  // X-axis labels — show first, middle, last
   const labelIdxs = weeks.length <= 4 ? weeks.map((_,i)=>i) : [0, Math.floor((weeks.length-1)/2), weeks.length-1];
   const xLabels = labelIdxs.map(i => {
     const d = new Date(weeks[i] + "T12:00:00");
     const lbl = d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
     return `<text x="${xPos(i)}" y="${H - 14}" font-size="9" text-anchor="middle" fill="#888">${lbl}</text>`;
   }).join("");
-
-  // Legend with current % per category
   const legend = CATS.map(cat => {
     const color = CAT_COLORS[cat] || "#888";
     const latest = [...catData[cat]].reverse().find(d => d.pct !== null);
@@ -996,7 +1117,6 @@ function buildProgressChart(playerName) {
       <span style="font-weight:500;color:${color}">${latestPct}</span>
     </div>`;
   }).join("");
-
   return `
     <div class="card" style="padding:14px 16px">
       <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">📈 Weekly % by Category</div>
@@ -1014,18 +1134,17 @@ function buildProgressChart(playerName) {
     </div>`;
 }
 
+// ── Daily check-in ────────────────────────────
 function buildDailyCheckin() {
   const name = curPlayer, wk = weekKey();
   const dayLabel = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
   const existing = getDailyCheckin(name, wk, selectedDay) || {};
-
   return `
     <div style="max-width:520px;margin:0 auto">
       <div style="text-align:center;margin-bottom:18px">
         <div style="font-size:11px;color:#888;letter-spacing:1px;text-transform:uppercase;font-weight:500">🧠 Daily Check-In</div>
         <div style="font-size:13px;color:#1A3A5C;margin-top:4px">${dayLabel} — ${name}</div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:12px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Did you bring your best effort today?</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -1033,7 +1152,6 @@ function buildDailyCheckin() {
           <button data-checkin="effort" data-val="No" class="${existing.effort==='No'?'btn-primary':''}" style="padding:14px;font-size:14px;font-weight:500">No</button>
         </div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:12px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">When something went wrong, what did you do?</div>
         <div style="display:grid;gap:6px">
@@ -1042,7 +1160,6 @@ function buildDailyCheckin() {
           <button data-checkin="recovery" data-val="Stayed down" class="${existing.recovery==='Stayed down'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">😔 Got down and stayed down</button>
         </div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:14px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">One word for how you felt today?</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
@@ -1051,7 +1168,6 @@ function buildDailyCheckin() {
           ).join("")}
         </div>
       </div>
-
       <div style="display:flex;gap:8px">
         <button data-action="skip-checkin" style="flex:1;padding:12px;font-size:13px;color:#888">Skip for now</button>
         <button data-action="save-checkin" class="btn-primary" style="flex:2;padding:12px;font-size:14px;font-weight:500">✓ Save Check-In</button>
@@ -1059,17 +1175,16 @@ function buildDailyCheckin() {
     </div>`;
 }
 
+// ── Weekly check-in ───────────────────────────
 function buildWeeklyCheckin() {
   const name = curPlayer, wk = weekKey();
   const existing = getWeeklyCheckin(name, wk) || {};
-
   return `
     <div style="max-width:520px;margin:0 auto">
       <div style="text-align:center;margin-bottom:18px">
         <div style="font-size:11px;color:#888;letter-spacing:1px;text-transform:uppercase;font-weight:500">🧠 Weekly Check-In</div>
         <div style="font-size:13px;color:#1A3A5C;margin-top:4px">Week of ${fmtWeek(wk)} — ${name}</div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:12px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:8px">Did your actions this week match your goals?</div>
         <div style="font-size:11px;color:#888;margin-bottom:14px">Slide honestly. 1 = not at all. 10 = locked in all week.</div>
@@ -1079,7 +1194,6 @@ function buildWeeklyCheckin() {
           <div id="alignment-val" style="font-size:22px;font-weight:500;color:#1A3A5C;min-width:30px;text-align:center">${existing.alignment || 5}</div>
         </div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:12px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Did you compete with confidence this week?</div>
         <div style="display:grid;gap:6px">
@@ -1088,7 +1202,6 @@ function buildWeeklyCheckin() {
           <button data-wcheckin="confidence" data-val="In my head" class="${existing.confidence==='In my head'?'btn-primary':''}" style="padding:12px;font-size:13px;font-weight:500;text-align:left">🤔 In my head more than I should've been</button>
         </div>
       </div>
-
       <div class="card" style="padding:18px 16px;margin-bottom:14px">
         <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Rate your self-talk this week.</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
@@ -1097,7 +1210,6 @@ function buildWeeklyCheckin() {
           <button data-wcheckin="selftalk" data-val="Negative" class="${existing.selftalk==='Negative'?'btn-primary':''}" style="padding:11px;font-size:12px;font-weight:500">Negative</button>
         </div>
       </div>
-
       <div style="display:flex;gap:8px">
         <button data-action="go-home" style="flex:1;padding:12px;font-size:13px;color:#888">Cancel</button>
         <button data-action="save-wcheckin" class="btn-primary" style="flex:2;padding:12px;font-size:14px;font-weight:500">✓ Save Weekly Check-In</button>
@@ -1105,38 +1217,28 @@ function buildWeeklyCheckin() {
     </div>`;
 }
 
+// ── Summary ───────────────────────────────────
 function buildSummary() {
   const name = curPlayer;
   const wk = weekKey(), mo = monthKey(), yr = yearKey();
-
-  // Get all weeks with data for this player
   const playerWeeks = [...new Set(allShots.filter(s=>s.player===name).map(s=>s.week))].sort();
-  const weekWeeks = [wk];
+  const weekWeeks  = [wk];
   const monthWeeks = playerWeeks.filter(w => w.startsWith(mo));
-  const yearWeeks = playerWeeks.filter(w => w.startsWith(yr));
+  const yearWeeks  = playerWeeks.filter(w => w.startsWith(yr));
 
-  // Calculate totals for each period
   function periodStats(weeks) {
-    const tot = playerTotals(name, weeks);
-    const cats = playerCatTotals(name, weeks);
-    const best = playerBestDay(name, weeks);
-    return { tot, cats, best, wkCount: weeks.length };
+    return { tot: playerTotals(name, weeks), cats: playerCatTotals(name, weeks), best: playerBestDay(name, weeks), wkCount: weeks.length };
   }
-
   const weekS = periodStats(weekWeeks);
   const monthS = periodStats(monthWeeks);
-  const yearS = periodStats(yearWeeks);
+  const yearS  = periodStats(yearWeeks);
 
-  // Trend — compare current week to last week
   let trend = null;
   if (playerWeeks.length >= 2) {
     const prev = playerTotals(name, [playerWeeks[playerWeeks.length-2]]);
-    if (prev.pct !== null && weekS.tot.pct !== null) {
-      trend = weekS.tot.pct - prev.pct;
-    }
+    if (prev.pct !== null && weekS.tot.pct !== null) trend = weekS.tot.pct - prev.pct;
   }
 
-  // Best spot this week (best % across all categories/spots)
   let bestSpot = null;
   CATS.forEach(cat => {
     const nSpots = getSpotCount(name, cat);
@@ -1156,7 +1258,6 @@ function buildSummary() {
     }
   });
 
-  // Reps total per period
   function periodCard(label, stats, color) {
     return `
       <div class="card" style="padding:14px 16px;background:linear-gradient(135deg, ${color}10, transparent)">
@@ -1181,7 +1282,6 @@ function buildSummary() {
       </div>`;
   }
 
-  // Category breakdown table
   const catRows = CATS.map(cat => {
     const wkC = weekS.cats[cat], moC = monthS.cats[cat], yrC = yearS.cats[cat];
     return `<tr>
@@ -1192,7 +1292,6 @@ function buildSummary() {
     </tr>`;
   }).join("");
 
-  // Trend indicator
   const trendHtml = trend !== null ? `
     <div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:500;background:${trend>=0?'#E6F7EC':'#FDECEC'};color:${trend>=0?'#27500A':'#A32D2D'}">
       ${trend>=0?'▲':'▼'} ${Math.abs(trend)}% vs last week
@@ -1213,11 +1312,9 @@ function buildSummary() {
       🧠 ${hasWeekly?'Update':'Start'} Weekly Check-In
     </button>
     ${buildProgressChart(name)}
-
     ${periodCard('This Week', weekS, '#1A3A5C')}
     ${periodCard('This Month', monthS, '#2E75B6')}
     ${periodCard('This Year', yearS, '#1E8449')}
-
     ${bestSpot ? `
       <div class="card" style="padding:14px 16px;background:linear-gradient(135deg,#FFF9E6,transparent);border:1px solid #FFD700">
         <div style="font-size:11px;color:#856404;letter-spacing:.5px;text-transform:uppercase;font-weight:500;margin-bottom:6px">🎯 Best Spot This Week</div>
@@ -1232,29 +1329,25 @@ function buildSummary() {
           </div>
         </div>
       </div>` : ''}
-
     <div class="card" style="padding:14px 16px">
       <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">By Category</div>
       <table class="dash">
         <thead><tr>
           <th style="text-align:left">Category</th>
-          <th>Week</th>
-          <th>Month</th>
-          <th>Year</th>
+          <th>Week</th><th>Month</th><th>Year</th>
         </tr></thead>
         <tbody>${catRows}</tbody>
       </table>
-    </div>
-  `;
+    </div>`;
 }
 
+// ── Leaderboard ───────────────────────────────
 function buildLeaderboard() {
   const weeks = weeksForPeriod(sbPeriod);
   const wk = weekKey(), mo = monthKey(), yr = yearKey();
   const periodLabel = sbPeriod==="week" ? "Week of "+fmtWeek(wk)
                     : sbPeriod==="month" ? fmtMonth(mo) : yr+" Season";
 
-  // Shooting King — based on WEIGHTED makes
   const kingWeeks = [weekKey()];
   const kingData = roster.map(n => {
     const t = playerTotals(n, kingWeeks);
@@ -1307,7 +1400,6 @@ function buildLeaderboard() {
   function ranked(arr) {
     return arr.filter(x=>x.val!==null).sort((a,b)=>(b.exact||b.val)-(a.exact||a.val));
   }
-
   const overall  = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:`${t.m}/${t.a} shots`};}));
   const attempts = ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:`${t.m} made`};}));
   const bestDay  = ranked(roster.map(n=>{const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""};}));
@@ -1341,7 +1433,6 @@ function buildLeaderboard() {
     {id:"improved",label:"Improved"},
     {id:"cats",label:"By Category"},
   ];
-
   let content = "";
   if (sbSection==="overall")  content=`<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>${sbRows(overall)}</div>`;
   if (sbSection==="attempts") content=`<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>${sbRows(attempts,true)}</div>`;
@@ -1402,8 +1493,8 @@ async function handleCreateTeam() {
   render(buildCoach());
 }
 
-function handleNewTeam() { screen="create-team"; render(buildCreateTeam()); }
-function handleSwitchTeam() { clearTeam(); teamCode=null; teamName=""; roster=[]; allShots=[]; screen="team-select"; render(buildTeamSelect()); }
+function handleNewTeam()    { screen="create-team"; render(buildCreateTeam()); }
+function handleSwitchTeam() { clearTeam(); teamCode=null; teamName=""; roster=[]; allShots=[]; allPlayerPins=[]; screen="team-select"; render(buildTeamSelect()); }
 
 // ── Event handling ────────────────────────────
 function attachEvents() {
@@ -1421,15 +1512,50 @@ function attachEvents() {
       if (teamCode) { screen="home"; render(buildHome()); }
       else { screen="team-select"; render(buildTeamSelect()); }
     }
-    if (a==="sel-player")  { curPlayer=b.dataset.name; screen="player"; localEdits={}; render(buildPlayer()); }
+
+    if (a==="sel-player") {
+      const name = b.dataset.name;
+      curPlayer = name;
+      localEdits = {};
+      const existingPin = getPlayerPin(name);
+      if (isPlayerUnlocked(name, teamCode)) {
+        // Already unlocked this session
+        screen="player"; render(buildPlayer());
+      } else if (existingPin === null) {
+        // No PIN set yet — go to setup
+        pinMode="player-setup"; pinEntry=""; pinErr=""; pinSetupFirst="";
+        screen="pin"; render(buildPin());
+      } else {
+        // Has a PIN — ask for it
+        pinMode="player-enter"; pinEntry=""; pinErr="";
+        screen="pin"; render(buildPin());
+      }
+    }
+
     if (a==="go-home")     { screen="home"; coachOpen=false; render(buildHome()); }
     if (a==="go-lb")       { screen="leaderboard"; render(buildLeaderboard()); }
     if (a==="go-summary")  { screen="summary"; render(buildSummary()); }
     if (a==="go-coach") {
       if (coachOpen) { screen="coach"; render(buildCoach()); }
-      else { pinEntry=""; pinErr=""; screen="pin"; render(buildPin()); }
+      else { pinEntry=""; pinErr=""; pinMode="coach"; screen="pin"; render(buildPin()); }
     }
     if (a==="ctab") { coachTab=b.dataset.t; render(buildCoach()); }
+
+    if (a==="reset-player-pin") {
+      const name = b.dataset.name;
+      if (!confirm(`Reset PIN for ${name}? They'll set a new one next time they log in.`)) return;
+      // Delete from DB
+      await db.from("player_pins").delete().eq("player", name).eq("team_code", teamCode);
+      allPlayerPins = allPlayerPins.filter(p => !(p.player===name && p.team_code===teamCode));
+      // Remove from session unlock
+      try {
+        const u = getUnlockedPlayers();
+        delete u[teamCode + "|" + name];
+        sessionStorage.setItem("bball_unlocked", JSON.stringify(u));
+      } catch(e) {}
+      showToast(`PIN reset for ${name}`);
+      render(buildCoach());
+    }
 
     if (a==="add-player") {
       if (b.disabled) return;
@@ -1472,124 +1598,89 @@ function attachEvents() {
       for (const key of Object.keys(bySpot)) {
         const [cat,si,di]=key.split("|");
         const {m,a}=bySpot[key];
-        const mVal = parseInt(m);
-        const aVal = parseInt(a);
+        const mVal=parseInt(m), aVal=parseInt(a);
         if (!isNaN(mVal) && !isNaN(aVal) && m!==" " && a!==" " && m!==undefined && a!==undefined) {
           await saveShot(curPlayer,wk,cat,parseInt(si),parseInt(di),mVal,aVal);
         }
       }
-      // Save notes
       const noteInputs = document.querySelectorAll("[data-note-day]");
       for (const ni of noteInputs) {
-        const day = parseInt(ni.dataset.noteDay);
-        const text = ni.value.trim();
-        const existing = getNote(curPlayer, wk, day);
-        if (text !== existing) {
-          await saveNote(curPlayer, wk, day, text);
-        }
+        const day=parseInt(ni.dataset.noteDay), text=ni.value.trim();
+        if (text !== getNote(curPlayer, wk, day)) await saveNote(curPlayer, wk, day, text);
       }
-      // Save spot labels
       const labelInputs = document.querySelectorAll("[data-spot-label-cat]");
       const seenLabels = new Set();
       for (const li of labelInputs) {
-        const cat = li.dataset.spotLabelCat;
-        const si = parseInt(li.dataset.spotLabelSi);
-        const key = `${cat}|${si}`;
+        const cat=li.dataset.spotLabelCat, si=parseInt(li.dataset.spotLabelSi);
+        const key=`${cat}|${si}`;
         if (seenLabels.has(key)) continue;
         seenLabels.add(key);
-        const label = li.value.trim();
-        const existing = getSpotLabel(curPlayer, cat, si);
-        if (label !== existing) {
-          await saveSpotLabel(curPlayer, cat, si, label);
-        }
+        const label=li.value.trim();
+        if (label !== getSpotLabel(curPlayer, cat, si)) await saveSpotLabel(curPlayer, cat, si, label);
       }
       localEdits={};
       showToast("✓ Numbers saved!");
-      // Show daily check-in after saving
       screen="daily-checkin";
-      checkinTemp = {};
+      checkinTemp={};
       render(buildDailyCheckin());
     }
 
     if (a==="sb-period") { sbPeriod=b.dataset.p; render(buildLeaderboard()); }
     if (a==="sb-sec")    { sbSection=b.dataset.s; render(buildLeaderboard()); }
 
-    if (a==="go-weekly-checkin") {
-      screen="weekly-checkin";
-      checkinTemp = {};
-      render(buildWeeklyCheckin());
-    }
-    if (a==="skip-checkin") {
-      screen="player";
-      checkinTemp = {};
-      render(buildPlayer());
-    }
+    if (a==="go-weekly-checkin") { screen="weekly-checkin"; checkinTemp={}; render(buildWeeklyCheckin()); }
+    if (a==="skip-checkin") { screen="player"; checkinTemp={}; render(buildPlayer()); }
     if (a==="save-checkin") {
       if (b.disabled) return;
-      b.disabled = true;
-      const wk = weekKey();
-      const existing = getDailyCheckin(curPlayer, wk, selectedDay) || {};
-      const effort   = checkinTemp.effort   ?? existing.effort   ?? null;
-      const recovery = checkinTemp.recovery ?? existing.recovery ?? null;
-      const feeling  = checkinTemp.feeling  ?? existing.feeling  ?? null;
-      await saveDailyCheckin(curPlayer, wk, selectedDay, effort, recovery, feeling);
-      checkinTemp = {};
-      showToast("✓ Check-in saved!");
-      screen="player";
-      render(buildPlayer());
+      b.disabled=true;
+      const wk=weekKey();
+      const existing=getDailyCheckin(curPlayer,wk,selectedDay)||{};
+      await saveDailyCheckin(curPlayer,wk,selectedDay,
+        checkinTemp.effort??existing.effort??null,
+        checkinTemp.recovery??existing.recovery??null,
+        checkinTemp.feeling??existing.feeling??null);
+      checkinTemp={}; showToast("✓ Check-in saved!");
+      screen="player"; render(buildPlayer());
     }
     if (a==="save-wcheckin") {
       if (b.disabled) return;
-      b.disabled = true;
-      const wk = weekKey();
-      const existing = getWeeklyCheckin(curPlayer, wk) || {};
-      const align = parseInt(document.getElementById("alignment-slider")?.value) || existing.alignment || 5;
-      const conf  = checkinTemp.confidence ?? existing.confidence ?? null;
-      const st    = checkinTemp.selftalk   ?? existing.selftalk   ?? null;
-      await saveWeeklyCheckin(curPlayer, wk, align, conf, st);
-      checkinTemp = {};
-      showToast("✓ Weekly check-in saved!");
-      screen="summary";
-      render(buildSummary());
+      b.disabled=true;
+      const wk=weekKey();
+      const existing=getWeeklyCheckin(curPlayer,wk)||{};
+      const align=parseInt(document.getElementById("alignment-slider")?.value)||existing.alignment||5;
+      await saveWeeklyCheckin(curPlayer,wk,align,
+        checkinTemp.confidence??existing.confidence??null,
+        checkinTemp.selftalk??existing.selftalk??null);
+      checkinTemp={}; showToast("✓ Weekly check-in saved!");
+      screen="summary"; render(buildSummary());
     }
 
     if (a==="spot-plus" || a==="spot-minus") {
       if (b.disabled) return;
-      b.disabled = true;
-      const cat = CATS[parseInt(b.dataset.catidx)];
-      const delta = a==="spot-plus" ? 1 : -1;
-      await changeSpotCount(cat, delta);
+      b.disabled=true;
+      const cat=CATS[parseInt(b.dataset.catidx)];
+      await changeSpotCount(cat, a==="spot-plus" ? 1 : -1);
     }
   });
 
-  // Daily check-in button clicks
   document.getElementById("app").addEventListener("click", e => {
-    const btn = e.target.closest("[data-checkin]");
-    if (btn) {
-      checkinTemp[btn.dataset.checkin] = btn.dataset.val;
-      render(buildDailyCheckin());
-      return;
-    }
-    const wbtn = e.target.closest("[data-wcheckin]");
-    if (wbtn) {
-      checkinTemp[wbtn.dataset.wcheckin] = wbtn.dataset.val;
-      render(buildWeeklyCheckin());
-      return;
-    }
+    const btn=e.target.closest("[data-checkin]");
+    if (btn) { checkinTemp[btn.dataset.checkin]=btn.dataset.val; render(buildDailyCheckin()); return; }
+    const wbtn=e.target.closest("[data-wcheckin]");
+    if (wbtn) { checkinTemp[wbtn.dataset.wcheckin]=wbtn.dataset.val; render(buildWeeklyCheckin()); return; }
   });
 
   document.getElementById("app").addEventListener("input", e => {
-    const inp = e.target;
+    const inp=e.target;
     if (!inp.dataset.cat) return;
-    const {cat,si,di} = inp.dataset;
-    const ppId = `pp-${cat.replace(/\W/g,"_")}-${si}`;
-    const el = document.getElementById(ppId);
+    const {cat,si} = inp.dataset;
+    const ppId=`pp-${cat.replace(/\W/g,"_")}-${si}`;
+    const el=document.getElementById(ppId);
     if (el) {
-      const wk = weekKey();
       let sm=0,sa=0;
       for (let d=0;d<7;d++) {
-        const mInp = document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="m"]`);
-        const aInp = document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="a"]`);
+        const mInp=document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="m"]`);
+        const aInp=document.querySelector(`[data-cat="${cat}"][data-si="${si}"][data-di="${d}"][data-f="a"]`);
         sm+=parseInt(mInp?.value)||0; sa+=parseInt(aInp?.value)||0;
       }
       const p=sa?Math.round(sm/sa*100):null;
@@ -1601,85 +1692,60 @@ function attachEvents() {
 
 // ── Change spot count ─────────────────────────
 async function changeSpotCount(cat, delta) {
-  const current = getSpotCount(curPlayer, cat);
-  const newCount = Math.max(1, Math.min(15, current + delta));
-  if (newCount === current) return;
-
-  // Save any pending shot entries before re-rendering
-  const wk = weekKey();
-  const inputs = document.querySelectorAll("[data-cat][data-si][data-di][data-f]");
-  const bySpot = {};
-  inputs.forEach(inp => {
+  const current=getSpotCount(curPlayer,cat);
+  const newCount=Math.max(1,Math.min(15,current+delta));
+  if (newCount===current) return;
+  const wk=weekKey();
+  const inputs=document.querySelectorAll("[data-cat][data-si][data-di][data-f]");
+  const bySpot={};
+  inputs.forEach(inp=>{
     const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;
     if (!bySpot[key]) bySpot[key]={};
     bySpot[key][inp.dataset.f]=inp.value;
   });
   for (const key of Object.keys(bySpot)) {
-    const [c, si, di] = key.split("|");
-    const { m, a } = bySpot[key];
-    const mVal = parseInt(m);
-    const aVal = parseInt(a);
-    if (!isNaN(mVal) && !isNaN(aVal) && m!=="" && a!=="" && m!==undefined && a!==undefined) {
-      await saveShot(curPlayer, wk, c, parseInt(si), parseInt(di), mVal, aVal);
+    const [c,si,di]=key.split("|");
+    const {m,a}=bySpot[key];
+    const mVal=parseInt(m),aVal=parseInt(a);
+    if (!isNaN(mVal)&&!isNaN(aVal)&&m!==""&&a!==""&&m!==undefined&&a!==undefined) {
+      await saveShot(curPlayer,wk,c,parseInt(si),parseInt(di),mVal,aVal);
     }
   }
-  // Save pending notes
-  const noteInputs = document.querySelectorAll("[data-note-day]");
+  const noteInputs=document.querySelectorAll("[data-note-day]");
   for (const ni of noteInputs) {
-    const day = parseInt(ni.dataset.noteDay);
-    const text = ni.value.trim();
-    const existing = getNote(curPlayer, wk, day);
-    if (text !== existing) {
-      await saveNote(curPlayer, wk, day, text);
-    }
+    const day=parseInt(ni.dataset.noteDay),text=ni.value.trim();
+    if (text!==getNote(curPlayer,wk,day)) await saveNote(curPlayer,wk,day,text);
   }
-  // Save pending spot labels
-  const labelInputs = document.querySelectorAll("[data-spot-label-cat]");
-  const seen = new Set();
+  const labelInputs=document.querySelectorAll("[data-spot-label-cat]");
+  const seen=new Set();
   for (const li of labelInputs) {
-    const c = li.dataset.spotLabelCat;
-    const si = parseInt(li.dataset.spotLabelSi);
-    const k = `${c}|${si}`;
+    const c=li.dataset.spotLabelCat,si=parseInt(li.dataset.spotLabelSi),k=`${c}|${si}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    const label = li.value.trim();
-    const existing = getSpotLabel(curPlayer, c, si);
-    if (label !== existing) {
-      await saveSpotLabel(curPlayer, c, si, label);
-    }
+    const label=li.value.trim();
+    if (label!==getSpotLabel(curPlayer,c,si)) await saveSpotLabel(curPlayer,c,si,label);
   }
-
-  await saveSpotCount(curPlayer, cat, newCount);
+  await saveSpotCount(curPlayer,cat,newCount);
   render(buildPlayer());
 }
 
-// ── Day selector for mobile ───────────────────
-function selectDay(d) {
-  selectedDay = d;
-  render(buildPlayer());
-}
+// ── Day selector ──────────────────────────────
+function selectDay(d) { selectedDay=d; render(buildPlayer()); }
 
 // ── Boot ─────────────────────────────────────
 async function boot() {
   render(`<div class="loading">Loading...</div>`);
   attachEvents();
   await loadTeams();
-
-  // First-time visitor — show onboarding
   if (!hasSeenOnboarding()) {
-    onboardStep = 0;
-    screen = "onboarding";
-    render(buildOnboarding());
-    return;
+    onboardStep=0; screen="onboarding"; render(buildOnboarding()); return;
   }
-
-  const saved = savedTeam();
+  const saved=savedTeam();
   if (saved) {
-    const err = await joinTeam(saved);
-    if (!err) { await loadNotes(); await loadSpotNames(); await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins(); await loadWeights(); screen="home"; render(buildHome()); return; }
+    const err=await joinTeam(saved);
+    if (!err) { screen="home"; render(buildHome()); return; }
   }
-  screen="team-select";
-  render(buildTeamSelect());
+  screen="team-select"; render(buildTeamSelect());
 }
 
 boot();
