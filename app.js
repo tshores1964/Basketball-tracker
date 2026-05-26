@@ -1472,14 +1472,9 @@ function attachEvents() {
     if(a==="about-tab"){aboutTab=b.dataset.t;render(buildAbout());}
     if(a==="share-coach"){
       const subject="Free Basketball Shooting Tracker — Sharpshooter";
-      const msg=`Coach,\n\nI want to share something I've been building for my team that I think you'll find useful.\n\nIt's called Sharpshooter — a free basketball shooting tracker built specifically for team workouts. Players log their makes and attempts by category and spot, compete for the Shooting King crown each week, and do quick mental performance check-ins after every session. You get a live dashboard of your whole team's shooting percentages by category, plus the ability to leave private feedback for each player.\n\nHere's how to get started in about 5 minutes:\n\n1. Open basketball-tracker-nine.vercel.app on your phone\n2. Tap "Create New Team" and set up your roster\n3. Share your team code with your players\n4. Players join, set their PIN, and start logging\n\nAdd it to your home screen and it works just like a regular app — no App Store required.\n\nIt's completely free right now. We're in early MVP testing before a full App Store launch later this year. I'd love to have another team on it and get your feedback.\n\nAny questions, just reply.\n\nCoach Todd Shores\nBobcat Basketball\nOrange, TX`;
-      if(navigator.share){
-        navigator.share({title:subject, text:msg, url:'https://basketball-tracker-nine.vercel.app'}).catch(()=>{});
-      } else {
-        // Fallback: open mailto link
-        const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(msg)}`;
-        window.open(mailtoLink, '_blank');
-      }
+      const body=`Coach,\n\nI want to share something I've been building for my team that I think you'll find useful.\n\nIt's called Sharpshooter — a free basketball shooting tracker built specifically for team workouts. Players log their makes and attempts by category and spot, compete for the Shooting King crown each week, and do quick mental performance check-ins after every session. You get a live dashboard of your whole team's shooting percentages by category, plus the ability to leave private feedback for each player.\n\nHere's how to get started in about 5 minutes:\n\n1. Open basketball-tracker-nine.vercel.app on your phone\n2. Tap "Create New Team" and set up your roster\n3. Share your team code with your players\n4. Players join, set their PIN, and start logging\n\nAdd it to your home screen and it works just like a regular app — no App Store required.\n\nIt's completely free right now. We're in early MVP testing before a full App Store launch later this year. I'd love to have another team on it and get your feedback.\n\nAny questions, just reply.\n\nCoach Todd Shores\nBobcat Basketball\nOrange, TX`;
+      const gmailUrl = `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.open(gmailUrl, '_blank');
     }
     if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
     if(a==="go-league"){screen="league";buildLeague();}
