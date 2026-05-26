@@ -59,6 +59,10 @@ let allWeeklyCheckins = [];
 let allWeights = [];
 let allPlayerPins = [];
 let allCoachComments = [];
+let teamCompete  = false;   // whether this team is opted into league
+let leagueShots  = [];      // shots from all competing teams
+let leagueRosters = {};     // { teamCode: [playerNames] }
+let leagueTeams  = [];      // competing team objects
 let checkinTemp = {};
 let onboardStep = 0;
 let joinCodeInput = "";
@@ -167,6 +171,30 @@ async function loadCoachComments() {
   if(error){console.error(error);return;} allCoachComments=data||[];
 }
 
+async function saveCompete(val) {
+  teamCompete = val;
+  await db.from("teams").update({compete: val}).eq("code", teamCode);
+  // Update local teams array
+  const t = teams.find(t=>t.code===teamCode);
+  if(t) t.compete = val;
+}
+
+async function loadLeagueData() {
+  // Load all competing teams and their shots for the current week
+  const {data: compTeams} = await db.from("teams").select("*").eq("compete", true);
+  leagueTeams = compTeams || [];
+
+  leagueShots = [];
+  leagueRosters = {};
+
+  for(const team of leagueTeams) {
+    const {data: shots} = await db.from("shots").select("*").eq("team_code", team.code).eq("week", weekKey());
+    if(shots) leagueShots.push(...shots);
+    const {data: ros} = await db.from("roster").select("name").eq("team_code", team.code);
+    if(ros) leagueRosters[team.code] = ros.filter(r=>r.name!=="__pin__").map(r=>r.name);
+  }
+}
+
 function getCoachComment(player, type, week, day) {
   if(type==="player") {
     // Most recent player-level comment
@@ -263,6 +291,9 @@ async function joinTeam(code) {
   await loadRoster(); await loadShots(); await loadNotes(); await loadSpotNames();
   await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins();
   await loadWeights(); await loadPlayerPins(); await loadCoachComments();
+  // Load compete flag for this team
+  const thisTeam = teams.find(t=>t.code===teamCode) || (await db.from("teams").select("*").eq("code",teamCode).single()).data;
+  teamCompete = thisTeam ? !!thisTeam.compete : false;
   return null;
 }
 async function saveShot(player,week,cat,spot,day,made,att) {
@@ -494,6 +525,7 @@ function buildHome() {
     <div class="card"><h3>Select your name</h3>${btns}</div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:4px">
       <button class="btn-primary" data-action="go-lb">🏆 Leaderboard</button>
+      <button class="btn-primary" data-action="go-league" style="background:#27500A">🌐 League</button>
       <button data-action="go-coach" style="font-size:12px;color:#666">🔒 Coach</button>
     </div>`;
 }
@@ -687,6 +719,19 @@ function buildSettings() {
       <label>New 4-digit PIN</label>
       <div class="row-flex"><input type="password" id="npin" maxlength="4" placeholder="New PIN" style="width:130px" /><button data-action="save-pin" class="btn-primary">Save</button></div>
       <div id="pmsg"></div>
+    </div>
+    <div class="card">
+      <h3>🏆 League Competition</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:12px">Opt your team into the cross-team league. Your team's weekly totals will appear on the League board visible to all teams.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px;font-weight:500;color:#1A3A5C">${teamCompete ? '✅ Competing in League' : '⭕ Not in League'}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${teamCompete ? 'Your team shows on the League board.' : 'Enable to compete against other teams.'}</div>
+        </div>
+        <button data-action="toggle-compete" class="${teamCompete?'btn-primary':''}" style="padding:10px 16px;font-size:13px;font-weight:500">
+          ${teamCompete ? 'Leave League' : 'Join League'}
+        </button>
+      </div>
     </div>`;
 }
 
@@ -1017,6 +1062,124 @@ function buildSummary() {
     </div>`;
 }
 
+// ── League screen ─────────────────────────────
+async function buildLeague() {
+  render(`<div class="loading" style="padding:40px;text-align:center">Loading League...</div>`);
+  await loadLeagueData();
+
+  const wk = weekKey();
+  if(leagueTeams.length === 0) {
+    render(`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button data-action="go-home">← Back</button>
+        <span style="font-weight:500;font-size:15px">🌐 League</span>
+      </div>
+      <div class="card" style="text-align:center;padding:30px 20px">
+        <div style="font-size:32px;margin-bottom:10px">🏀</div>
+        <div style="font-size:15px;font-weight:500;color:#1A3A5C;margin-bottom:8px">No teams in the league yet</div>
+        <div style="font-size:12px;color:#888">Coaches can join the league from Coach Panel → Settings.</div>
+      </div>`);
+    return;
+  }
+
+  // Calculate team totals for this week
+  const teamStats = leagueTeams.map(team => {
+    const shots = leagueShots.filter(s => s.team_code === team.code);
+    const made  = shots.reduce((a,s) => a+(s.made||0), 0);
+    const att   = shots.reduce((a,s) => a+(s.attempts||0), 0);
+    const pct   = att ? Math.round(made/att*100) : null;
+
+    // Weighted King points — use default weights (1.0) for cross-team since we don't load all team weights
+    const weightMap = {"Form Shooting":0.5,"Catch & Shoot":1.0,"Catch & Shoot 3s":3.0,"1-Dribble Pull-Up":2.0,"1-Dribble Pull-Up 3s":4.0,"Finishes":1.0};
+    let kingPts = 0;
+    CATS.forEach(cat => {
+      const w = weightMap[cat] || 1.0;
+      const catMade = shots.filter(s=>s.category===cat).reduce((a,s)=>a+(s.made||0),0);
+      kingPts += catMade * w;
+    });
+
+    return { code: team.code, name: team.name, made, att, pct, kingPts: Math.round(kingPts*10)/10 };
+  }).filter(t => t.kingPts > 0).sort((a,b) => b.kingPts - a.kingPts);
+
+  if(teamStats.length === 0) {
+    render(`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button data-action="go-home">← Back</button>
+        <span style="font-weight:500;font-size:15px">🌐 League</span>
+      </div>
+      <div class="card" style="text-align:center;padding:30px 20px">
+        <div style="font-size:32px;margin-bottom:10px">🏀</div>
+        <div style="font-size:15px;font-weight:500;color:#1A3A5C;margin-bottom:8px">${leagueTeams.length} team${leagueTeams.length===1?'':'s'} in the league</div>
+        <div style="font-size:12px;color:#888">No shots logged this week yet. Check back after practice!</div>
+      </div>`);
+    return;
+  }
+
+  const champion = teamStats[0];
+  const medals = ["🥇","🥈","🥉"];
+  const medalColors = ["#FFD700","#C0C0C0","#CD7F32"];
+
+  const championBanner = `
+    <div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:16px;margin-bottom:14px;text-align:center">
+      <div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">🏆 League Champion — Week of ${fmtWeek(wk)}</div>
+      <div style="font-size:24px;font-weight:500;color:#FFD700;margin-bottom:8px">${champion.name}</div>
+      <div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:20px;font-weight:500;color:#FFD700">${champion.kingPts}</div>
+          <div style="font-size:10px;color:#888">King Points</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:20px;font-weight:500;color:#fff">${champion.made}</div>
+          <div style="font-size:10px;color:#888">Total Makes</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:20px;font-weight:500;color:#fff">${champion.pct===null?"—":champion.pct+"%"}</div>
+          <div style="font-size:10px;color:#888">Team Shooting %</div>
+        </div>
+      </div>
+    </div>`;
+
+  const maxKing = teamStats[0].kingPts || 1;
+  const rows = teamStats.map((t,i) => {
+    const barW = Math.round((t.kingPts/maxKing)*100);
+    const medal = medals[i] || String(i+1);
+    const color = medalColors[i] || "#888";
+    return `
+      <div class="sb-row ${i<3?`medal-${i+1}`:''}">
+        <div class="sb-rank" style="font-size:${i<3?'18':'13'}px">${medal}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:13px;color:#1A3A5C">${t.name}</div>
+          <div style="font-size:10px;color:#888">${t.made} makes · ${t.pct===null?"—":t.pct+"% shooting"}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;min-width:120px">
+          <div class="sb-bar-wrap" style="flex:1"><div class="sb-bar" style="width:${barW}%"></div></div>
+          <div style="text-align:right;min-width:40px">
+            <div class="sb-stat" style="color:${color}">${t.kingPts}</div>
+            <div class="sb-sub">pts</div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const isCompeting = teamCompete;
+
+  render(`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <button data-action="go-home">← Back</button>
+      <span style="font-weight:500;font-size:15px">🌐 League Standings</span>
+      ${isCompeting ? '<span style="font-size:11px;color:#27500A;background:#E6F7EC;padding:3px 8px;border-radius:10px">✅ Your team is in</span>' : ''}
+    </div>
+    ${championBanner}
+    <div class="sb-wrap">
+      <div class="sb-title">🏀 Team Rankings — Week of ${fmtWeek(wk)}</div>
+      <div style="font-size:11px;color:#888;margin-bottom:10px;padding:0 4px">Ranked by King Points (weighted makes)</div>
+      ${rows}
+    </div>
+    <div style="text-align:center;margin-top:12px;font-size:11px;color:#888">
+      ${leagueTeams.length} team${leagueTeams.length===1?'':'s'} competing · Updates live
+    </div>`);
+}
+
 // ── Leaderboard ───────────────────────────────
 function buildLeaderboard() {
   const weeks=weeksForPeriod(sbPeriod),wk=weekKey(),mo=monthKey(),yr=yearKey();
@@ -1104,7 +1267,7 @@ async function handleCreateTeam() {
   screen="coach";coachOpen=true;coachTab="roster";render(buildCoach());
 }
 function handleNewTeam(){screen="create-team";render(buildCreateTeam());}
-function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];screen="team-select";render(buildTeamSelect());}
+function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
 
 // ── Event handling ────────────────────────────
 function attachEvents() {
@@ -1128,6 +1291,13 @@ function attachEvents() {
 
     if(a==="go-home"){screen="home";coachOpen=false;coachViewPlayer=null;render(buildHome());}
     if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
+    if(a==="go-league"){screen="league";buildLeague();}
+    if(a==="toggle-compete"){
+      const btn=b;btn.disabled=true;btn.textContent="Saving...";
+      await saveCompete(!teamCompete);
+      showToast(teamCompete?"✅ Joined the League!":"⭕ Left the League");
+      render(buildCoach());
+    }
     if(a==="go-summary"){screen="summary";render(buildSummary());}
     if(a==="go-coach"){
       if(coachOpen){screen="coach";render(buildCoach());}
