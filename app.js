@@ -1297,6 +1297,7 @@ async function buildLeague() {
 
 // ── Leaderboard ───────────────────────────────
 function buildLeaderboard() {
+  try {
   const weeks=weeksForPeriod(sbPeriod),wk=weekKey(),mo=monthKey(),yr=yearKey();
   const periodLabel=sbPeriod==="week"?"Week of "+fmtWeek(wk):sbPeriod==="month"?fmtMonth(mo):yr+" Season";
   const kingWeeks=[weekKey()];
@@ -1350,6 +1351,10 @@ function buildLeaderboard() {
   if(sbSection==="bestday")  content=`<div class="sb-section"><div class="sb-section-title">Best single day</div>${sbRows(bestDay)}</div>`;
   if(sbSection==="improved") content=`<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>${sbRows(improved,false,true)}</div>`;
   if(sbSection==="cats")     content=catRanks.map(({cat,rows})=>`<div class="sb-section"><div class="sb-section-title">${cat}</div>${sbRows(rows)}</div>`).join("");
+  const sectionTabs = sections.map(function(s){
+    return '<div class="sb-tab '+(sbSection===s.id?"active":"")+'" data-action="sb-sec" data-s="'+s.id+'">'+s.label+'</div>';
+  }).join("");
+
   return`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
       <button data-action="go-home">← Back</button>
@@ -1364,9 +1369,16 @@ function buildLeaderboard() {
         <div class="sb-tab ${sbPeriod==="year"?"active":""}" data-action="sb-period" data-p="year">This Year</div>
       </div>
       <div class="period-label">${periodLabel}</div>
-      <div class="sb-tabs">${sections.map(s=>`<div class="sb-tab ${sbSection===s.id?"active":""}" data-action="sb-sec" data-s="${s.id}">${s.label}</div>`).join("")}</div>
+      <div class="sb-tabs">${sectionTabs}</div>
       ${content}
     </div>`;
+  } catch(e) {
+    return`<div class="card" style="padding:20px;text-align:center">
+      <div style="color:#A32D2D;font-size:13px;margin-bottom:8px">⚠️ Leaderboard error</div>
+      <div style="font-size:11px;color:#888">${e.message}</div>
+      <button data-action="go-home" style="margin-top:12px">← Back</button>
+    </div>`;
+  }
 }
 
 // ── About / Feature Explainer ────────────────
