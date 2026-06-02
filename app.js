@@ -2,7 +2,9 @@
 //  Basketball Shooting Tracker — Multi-Team
 // ─────────────────────────────────────────────
 
-const CATS    = ["Form Shooting","Catch & Shoot","Catch & Shoot 3s","1-Dribble Pull-Up","1-Dribble Pull-Up 3s","Finishes"];
+const DEFAULT_CATS = ["Form Shooting","Catch & Shoot","Catch & Shoot 3s","1-Dribble Pull-Up","1-Dribble Pull-Up 3s","Finishes"];
+const DEFAULT_WEIGHTS = {"Form Shooting":0.5,"Catch & Shoot":1.0,"Catch & Shoot 3s":3.0,"1-Dribble Pull-Up":2.0,"1-Dribble Pull-Up 3s":4.0,"Finishes":1.0};
+let CATS = [...DEFAULT_CATS];
 const DAYS    = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const N_SPOTS = 5;
 
@@ -58,6 +60,7 @@ let allSpotCounts = [];
 let allDailyCheckins = [];
 let allWeeklyCheckins = [];
 let allWeights = [];
+let allTeamCategories = [];
 let allPlayerPins = [];
 let allCoachComments = [];
 let allMessages = [];
@@ -312,8 +315,56 @@ async function loadWeights() {
   if(error){console.error(error);return;} allWeights=data||[];
 }
 function getWeight(cat) {
+  // Check team_categories first, then fallback to category_weights, then defaults
+  const tc=allTeamCategories.find(x=>x.name===cat&&x.team_code===teamCode);
+  if(tc) return parseFloat(tc.weight);
   const w=allWeights.find(x=>x.team_code===teamCode&&x.category===cat);
-  return w?parseFloat(w.weight):1.0;
+  if(w) return parseFloat(w.weight);
+  return DEFAULT_WEIGHTS[cat]||1.0;
+}
+
+async function loadTeamCategories() {
+  if(!teamCode)return;
+  const {data,error}=await db.from("team_categories").select("*").eq("team_code",teamCode).order("sort_order").order("created_at");
+  if(error){console.error(error);return;}
+  allTeamCategories=data||[];
+  // Update CATS array if team has custom categories
+  if(allTeamCategories.length>0){
+    CATS=allTeamCategories.map(function(c){return c.name;});
+  } else {
+    CATS=[...DEFAULT_CATS];
+  }
+}
+
+async function saveTeamCategory(id, name, weight) {
+  if(id){
+    const{error}=await db.from("team_categories").update({name,weight}).eq("id",id);
+    if(!error){const c=allTeamCategories.find(x=>x.id===id);if(c){c.name=name;c.weight=weight;}}
+  } else {
+    const sortOrder=allTeamCategories.length;
+    const{data,error}=await db.from("team_categories").insert({team_code:teamCode,name,weight,sort_order:sortOrder}).select().single();
+    if(!error&&data) allTeamCategories.push(data);
+  }
+  CATS=allTeamCategories.length>0?allTeamCategories.map(function(c){return c.name;}):[...DEFAULT_CATS];
+}
+
+async function deleteTeamCategory(id) {
+  await db.from("team_categories").delete().eq("id",id);
+  allTeamCategories=allTeamCategories.filter(function(c){return c.id!==id;});
+  CATS=allTeamCategories.length>0?allTeamCategories.map(function(c){return c.name;}):[...DEFAULT_CATS];
+}
+
+async function initTeamCategories() {
+  // If no custom categories set yet, seed with defaults
+  if(allTeamCategories.length===0){
+    for(let i=0;i<DEFAULT_CATS.length;i++){
+      const cat=DEFAULT_CATS[i];
+      const wt=DEFAULT_WEIGHTS[cat]||1.0;
+      const{data,error}=await db.from("team_categories").insert({team_code:teamCode,name:cat,weight:wt,sort_order:i}).select().single();
+      if(!error&&data) allTeamCategories.push(data);
+    }
+    CATS=[...DEFAULT_CATS];
+  }
 }
 
 async function createTeam(name,code,pin) {
@@ -332,7 +383,7 @@ async function joinTeam(code) {
   saveTeam(teamCode);
   await loadRoster(); await loadShots(); await loadNotes(); await loadSpotNames();
   await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins();
-  await loadWeights(); await loadPlayerPins(); await loadCoachComments();
+  await loadWeights(); await loadTeamCategories(); await loadPlayerPins(); await loadCoachComments();
   await loadMessages(); await loadMessageReads();
   // Load compete flag for this team
   const thisTeam = teams.find(t=>t.code===teamCode) || (await db.from("teams").select("*").eq("code",teamCode).single()).data;
@@ -632,17 +683,18 @@ function pinKey(k) {
 
 // ── Coach panel ───────────────────────────────
 function buildCoach() {
-  const tabs=["dashboard","roster","messages","settings"];
+  const tabs=["dashboard","roster","messages","categories","settings"];
   const nav=`<div class="nav-bar">
     ${tabs.map(t=>`<button data-action="ctab" data-t="${t}" class="${coachTab===t?"btn-primary":""}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join("")}
     <button onclick="refreshData()" style="font-size:11px;color:#888;margin-left:4px">🔄</button>
     <button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button>
   </div>`;
   let body="";
-  if(coachTab==="dashboard") body=buildDash();
-  if(coachTab==="roster")    body=coachViewPlayer ? buildCoachPlayerView() : buildRoster();
-  if(coachTab==="messages")  body=buildCoachMessages();
-  if(coachTab==="settings")  body=buildSettings();
+  if(coachTab==="dashboard")  body=buildDash();
+  if(coachTab==="roster")     body=coachViewPlayer ? buildCoachPlayerView() : buildRoster();
+  if(coachTab==="messages")   body=buildCoachMessages();
+  if(coachTab==="categories") body=buildCoachCategories();
+  if(coachTab==="settings")   body=buildSettings();
   return nav+body;
 }
 
@@ -758,6 +810,52 @@ function buildCoachPlayerView() {
 }
 
 function coachSelectDay(d) { coachCommentDay=d; render(buildCoach()); }
+
+function buildCoachCategories() {
+  const cats = allTeamCategories.length > 0 ? allTeamCategories : DEFAULT_CATS.map(function(c,i){return{id:null,name:c,weight:DEFAULT_WEIGHTS[c]||1.0,sort_order:i};});
+  const rows = cats.map(function(cat,i){
+    return `<div style="display:grid;grid-template-columns:1fr 80px 40px;gap:8px;align-items:center;margin-bottom:8px">
+      <input type="text" id="cat-name-${i}" value="${cat.name.replace(/"/g,'&quot;')}"
+        style="padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;background:#fafafa" />
+      <input type="number" id="cat-weight-${i}" value="${cat.weight}" min="0.1" max="10" step="0.5"
+        style="padding:8px 6px;border:1px solid #ccc;border-radius:8px;font-size:13px;text-align:center;background:#fafafa" />
+      <button data-action="delete-category" data-idx="${i}" data-id="${cat.id||''}"
+        class="btn-sm btn-danger" style="padding:8px">🗑</button>
+    </div>`;
+  }).join("");
+
+  return `
+    <div class="card">
+      <h3>📋 Shooting Categories</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:12px">Rename categories, adjust King Point weights, or add your own. Players see exactly what you set here.</p>
+      <div style="display:grid;grid-template-columns:1fr 80px 40px;gap:8px;margin-bottom:6px">
+        <div style="font-size:10px;color:#aaa;font-weight:500">Category Name</div>
+        <div style="font-size:10px;color:#aaa;font-weight:500;text-align:center">King Pts</div>
+        <div></div>
+      </div>
+      ${rows}
+      <button data-action="save-categories" class="btn-primary" style="width:100%;padding:11px;margin-top:4px;font-size:13px;font-weight:500">✓ Save Categories</button>
+    </div>
+    <div class="card">
+      <h3>+ Add Category</h3>
+      <div style="display:grid;grid-template-columns:1fr 80px;gap:8px;margin-bottom:8px">
+        <input type="text" id="new-cat-name" placeholder="e.g. Mid-Range Pull-Up"
+          style="padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit" />
+        <input type="number" id="new-cat-weight" value="1.0" min="0.1" max="10" step="0.5"
+          style="padding:8px 6px;border:1px solid #ccc;border-radius:8px;font-size:13px;text-align:center" />
+      </div>
+      <div style="font-size:10px;color:#888;margin-bottom:8px">King Points weight — higher = worth more on the leaderboard</div>
+      <button data-action="add-category" class="btn-primary" style="width:100%;padding:11px;font-size:13px">+ Add Category</button>
+      <div id="cat-msg" style="margin-top:6px"></div>
+    </div>
+    <div class="card" style="background:#FFF9E6;border:1px solid #FFD700">
+      <div style="font-size:12px;font-weight:500;color:#856404;margin-bottom:6px">👑 King Points Reference</div>
+      <div style="font-size:11px;color:#555;line-height:1.7">
+        Higher weight = harder shot = more King Points.<br>
+        Suggested scale: Easy drill = 0.5 · Standard = 1.0 · Pull-up = 2.0 · 3-pointer = 3.0 · Pull-up 3 = 4.0
+      </div>
+    </div>`;
+}
 
 function buildCoachMessages() {
   const readCounts = allMessages.map(m => {
@@ -1608,7 +1706,7 @@ async function handleCreateTeam() {
   screen="coach";coachOpen=true;coachTab="roster";render(buildCoach());
 }
 function handleNewTeam(){screen="create-team";render(buildCreateTeam());}
-function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];allMessages=[];allMessageReads=[];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
+function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];allMessages=[];allMessageReads=[];allTeamCategories=[];CATS=[...DEFAULT_CATS];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
 
 // ── Event handling ────────────────────────────
 function attachEvents() {
@@ -1638,6 +1736,51 @@ function attachEvents() {
       const body=`Coach,\n\nI want to share something I've been building for my team that I think you'll find useful.\n\nIt's called Sharpshooter — a free basketball shooting tracker built specifically for team workouts. Players log their makes and attempts by category and spot, compete for the Shooting King crown each week, and do quick mental performance check-ins after every session. You get a live dashboard of your whole team's shooting percentages by category, plus the ability to leave private feedback for each player.\n\nHere's how to get started in about 5 minutes:\n\n1. Open basketball-tracker-nine.vercel.app on your phone\n2. Tap "Create New Team" and set up your roster\n3. Share your team code with your players\n4. Players join, set their PIN, and start logging\n\nAdd it to your home screen and it works just like a regular app — no App Store required.\n\nIt's completely free right now. We're in early MVP testing before a full App Store launch later this year. I'd love to have another team on it and get your feedback.\n\nAny questions, just reply.\n\nCoach Todd Shores\nBobcat Basketball\nOrange, TX`;
       const gmailUrl = `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.open(gmailUrl, '_blank');
+    }
+    if(a==="save-categories"){
+      if(b.disabled)return;
+      b.disabled=true;b.textContent="Saving...";
+      const cats=allTeamCategories.length>0?allTeamCategories:DEFAULT_CATS.map(function(c,i){return{id:null,name:c,weight:DEFAULT_WEIGHTS[c]||1.0,sort_order:i};});
+      // If not seeded yet, seed first
+      if(allTeamCategories.length===0) await initTeamCategories();
+      for(let i=0;i<allTeamCategories.length;i++){
+        const nameEl=document.getElementById("cat-name-"+i);
+        const weightEl=document.getElementById("cat-weight-"+i);
+        if(nameEl&&weightEl){
+          const name=nameEl.value.trim();
+          const weight=parseFloat(weightEl.value)||1.0;
+          if(name) await saveTeamCategory(allTeamCategories[i].id,name,weight);
+        }
+      }
+      showToast("✓ Categories saved!");
+      render(buildCoach());
+    }
+    if(a==="add-category"){
+      if(b.disabled)return;
+      const nameEl=document.getElementById("new-cat-name");
+      const weightEl=document.getElementById("new-cat-weight");
+      const msg=document.getElementById("cat-msg");
+      const name=(nameEl?.value||"").trim();
+      const weight=parseFloat(weightEl?.value)||1.0;
+      if(!name){if(msg)msg.innerHTML='<span class="err">Enter a category name.</span>';return;}
+      if(allTeamCategories.find(function(c){return c.name.toLowerCase()===name.toLowerCase();})){
+        if(msg)msg.innerHTML='<span class="err">Category already exists.</span>';return;
+      }
+      b.disabled=true;b.textContent="Adding...";
+      // Seed defaults first if not done yet
+      if(allTeamCategories.length===0) await initTeamCategories();
+      await saveTeamCategory(null,name,weight);
+      showToast("✓ Category added!");
+      render(buildCoach());
+    }
+    if(a==="delete-category"){
+      const idx=parseInt(b.dataset.idx);
+      const id=b.dataset.id;
+      const catName=allTeamCategories[idx]?allTeamCategories[idx].name:"this category";
+      if(!confirm("Delete "+catName+"? Player data for this category is kept but won't show on the entry screen."))return;
+      if(id) await deleteTeamCategory(id);
+      showToast("Category removed.");
+      render(buildCoach());
     }
     if(a==="send-message"){
       if(b.disabled)return;
@@ -1790,6 +1933,7 @@ async function refreshData() {
   await loadDailyCheckins();
   await loadWeeklyCheckins();
   await loadPlayerPins();
+  await loadTeamCategories();
   await loadCoachComments();
   await loadMessages();
   await loadMessageReads();
