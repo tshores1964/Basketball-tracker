@@ -1658,6 +1658,7 @@ function attachEvents() {
       await markMessageRead(b.dataset.id, curPlayer);
       render(buildPlayer());
     }
+    if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
     if(a==="go-league"){screen="league";buildLeague();}
     if(a==="toggle-compete"){
       const btn=b;btn.disabled=true;btn.textContent="Saving...";
