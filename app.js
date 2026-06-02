@@ -1298,90 +1298,113 @@ async function buildLeague() {
 // ── Leaderboard ───────────────────────────────
 function buildLeaderboard() {
   try {
-  const weeks=weeksForPeriod(sbPeriod),wk=weekKey(),mo=monthKey(),yr=yearKey();
-  const periodLabel=sbPeriod==="week"?"Week of "+fmtWeek(wk):sbPeriod==="month"?fmtMonth(mo):yr+" Season";
-  const kingWeeks=[weekKey()];
-  const kingData=roster.map(n=>{const t=playerTotals(n,kingWeeks),wMade=playerWeightedMakes(n,kingWeeks);return{name:n,made:t.m,weighted:wMade,pct:t.pct};}).filter(p=>p.weighted>0).sort((a,b)=>b.weighted-a.weighted);
-  const king=kingData[0]||null;
-  let streak=0;
-  try {
+    const weeks=weeksForPeriod(sbPeriod);
+    const wk=weekKey(), mo=monthKey(), yr=yearKey();
+    const periodLabel=sbPeriod==="week"?"Week of "+fmtWeek(wk):sbPeriod==="month"?fmtMonth(mo):yr+" Season";
+    const kingWeeks=[weekKey()];
+    const kingData=roster.map(function(n){
+      const t=playerTotals(n,kingWeeks), wMade=playerWeightedMakes(n,kingWeeks);
+      return{name:n,made:t.m,weighted:wMade,pct:t.pct};
+    }).filter(function(p){return p.weighted>0;}).sort(function(a,b){return b.weighted-a.weighted;});
+    const king=kingData[0]||null;
+
+    let streak=0;
     if(king){
-      const currentWk=weekKey();
-      const pastWks=[...new Set(allShots.map(s=>s.week))].filter(w=>w<currentWk).sort().reverse().slice(0,10);
-      for(const wk2 of pastWks){
-        const wkData=roster.map(n=>({name:n,w:playerWeightedMakes(n,[wk2])})).filter(p=>p.w>0).sort((a,b)=>b.w-a.w);
-        if(wkData[0]?.name===king.name)streak++;
-        else break;
-      }
+      try{
+        const currentWk=weekKey();
+        const pastWks=[...new Set(allShots.map(function(s){return s.week;}))].filter(function(w){return w<currentWk;}).sort().reverse().slice(0,10);
+        for(let wi=0;wi<pastWks.length;wi++){
+          const wkData=roster.map(function(n){return{name:n,w:playerWeightedMakes(n,[pastWks[wi]])};}).filter(function(p){return p.w>0;}).sort(function(a,b){return b.w-a.w;});
+          if(wkData[0]&&wkData[0].name===king.name) streak++;
+          else break;
+        }
+      }catch(e2){streak=0;}
     }
-  } catch(e) { streak=0; }
-  const kingBanner = king
-    ? '<div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">'
-      + '<div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week\'s Shooting King</div>'
-      + '<div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">'+king.name+'</div>'
-      + '<div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap">'
-      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+Math.round(king.weighted*10)/10+'</div><div style="font-size:10px;color:#888">King Points</div></div>'
-      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+king.made+'</div><div style="font-size:10px;color:#888">Shots Made</div></div>'
-      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+(king.pct===null?"—":king.pct+"%")+'</div><div style="font-size:10px;color:#888">Shooting %</div></div>'
-      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+streak+'</div><div style="font-size:10px;color:#888">Week Streak</div></div>'
-      + '</div>'
-      + (streak>=2?'<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 '+streak+' weeks in a row!</div>':"")
-      + '</div>'
-    : '<div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px"><div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div></div>';
 
-  function ranked(arr){return arr.filter(function(x){return x.val!==null;}).sort(function(a,b){return(b.exact||b.val)-(a.exact||a.val);});}
-  const overall=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:t.m+"/"+t.a+" shots"};}));
-  const attempts=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:t.m+" made"};}));
-  const bestDay=ranked(roster.map(function(n){const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?b.day+" — "+b.m+"/"+b.a:""};}));
-  const improved=ranked(roster.map(function(n){const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?i.prev+"% → "+i.curr+"%":""};}));
-  const catRanks=CATS.map(function(cat){return{cat:cat,rows:ranked(roster.map(function(n){const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:c.m+"/"+c.a};}))};});
-  function sbRows(rows,isAtt,isDiff){
-    isAtt=isAtt||false;isDiff=isDiff||false;
-    if(!rows.length)return'<div class="sb-no-data">No data yet — get to work! 🏀</div>';
-    const max=rows[0].val||1;
-    return rows.map(function(r,i){
-      const barW=Math.round((r.val/max)*100);
-      const valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%";
-      const medalClass=i<3?"medal-"+(i+1):"";
-      return'<div class="sb-row '+medalClass+'"><div class="sb-rank '+rankMedal(i)+'">'+rankSymbol(i)+'</div><div class="sb-avatar">'+initials(r.name)+'</div><div class="sb-name">'+r.name+'</div><div class="sb-bar-wrap"><div class="sb-bar" style="width:'+barW+'%"></div></div><div><div class="sb-stat">'+valStr+'</div><div class="sb-sub">'+r.sub+'</div></div></div>';
-    }).join("");
-  }
-  const sections=[{id:"overall",label:"Overall %"},{id:"attempts",label:"Most Shots"},{id:"bestday",label:"Best Day"},{id:"improved",label:"Improved"},{id:"cats",label:"By Category"}];
-  let content="";
-  if(sbSection==="overall")  content='<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>'+sbRows(overall)+'</div>';
-  if(sbSection==="attempts") content='<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>'+sbRows(attempts,true)+'</div>';
-  if(sbSection==="bestday")  content='<div class="sb-section"><div class="sb-section-title">Best single day</div>'+sbRows(bestDay)+'</div>';
-  if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>'+sbRows(improved,false,true)+'</div>';
-  if(sbSection==="cats")     content=catRanks.map(function(cr){return'<div class="sb-section"><div class="sb-section-title">'+cr.cat+'</div>'+sbRows(cr.rows)+'</div>';}).join("");
-  const sectionTabs = sections.map(function(s){
-    return '<div class="sb-tab '+(sbSection===s.id?"active":"")+'" data-action="sb-sec" data-s="'+s.id+'">'+s.label+'</div>';
-  }).join("");
+    let kingBanner;
+    if(king){
+      const streakLine=streak>=2?'<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 '+streak+' weeks in a row!</div>':"";
+      const kingPct=king.pct===null?"—":king.pct+"%";
+      kingBanner='<div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">'
+        +'<div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week\'s Shooting King</div>'
+        +'<div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">'+king.name+'</div>'
+        +'<div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap">'
+        +'<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+Math.round(king.weighted*10)/10+'</div><div style="font-size:10px;color:#888">King Points</div></div>'
+        +'<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+king.made+'</div><div style="font-size:10px;color:#888">Shots Made</div></div>'
+        +'<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+kingPct+'</div><div style="font-size:10px;color:#888">Shooting %</div></div>'
+        +'<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+streak+'</div><div style="font-size:10px;color:#888">Week Streak</div></div>'
+        +'</div>'+streakLine+'</div>';
+    } else {
+      kingBanner='<div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px"><div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div></div>';
+    }
 
-  return`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <button data-action="go-home">← Back</button>
-      <span style="font-weight:500;font-size:15px">🏆 ${teamName} Rankings</span>
-    </div>
-    ${kingBanner}
-    <div class="sb-wrap">
-      <div class="sb-title">🏀 Team Rankings</div>
-      <div class="sb-tabs">
-        <div class="sb-tab ${sbPeriod==="week"?"active":""}" data-action="sb-period" data-p="week">This Week</div>
-        <div class="sb-tab ${sbPeriod==="month"?"active":""}" data-action="sb-period" data-p="month">This Month</div>
-        <div class="sb-tab ${sbPeriod==="year"?"active":""}" data-action="sb-period" data-p="year">This Year</div>
-      </div>
-      <div class="period-label">${periodLabel}</div>
-      <div class="sb-tabs">${sectionTabs}</div>
-      ${content}
-    </div>`;
+    function ranked(arr){
+      return arr.filter(function(x){return x.val!==null;}).sort(function(a,b){return(b.exact||b.val)-(a.exact||a.val);});
+    }
+    const overall=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:t.m+"/"+t.a+" shots"};}));
+    const attempts=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:t.m+" made"};}));
+    const bestDay=ranked(roster.map(function(n){const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?b.day+" \u2014 "+b.m+"/"+b.a:""};}));
+    const improved=ranked(roster.map(function(n){const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?i.prev+"% \u2192 "+i.curr+"%":""};}));
+    const catRanks=CATS.map(function(cat){return{cat:cat,rows:ranked(roster.map(function(n){const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:c.m+"/"+c.a};}))};});
+
+    function sbRows(rows,isAtt,isDiff){
+      isAtt=!!isAtt; isDiff=!!isDiff;
+      if(!rows.length) return '<div class="sb-no-data">No data yet \u2014 get to work! \uD83C\uDFC0</div>';
+      const max=rows[0].val||1;
+      return rows.map(function(r,i){
+        const barW=Math.round((r.val/max)*100);
+        const valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%";
+        const medalClass=i<3?"medal-"+(i+1):"";
+        return '<div class="sb-row '+medalClass+'">'
+          +'<div class="sb-rank '+rankMedal(i)+'">'+rankSymbol(i)+'</div>'
+          +'<div class="sb-avatar">'+initials(r.name)+'</div>'
+          +'<div class="sb-name">'+r.name+'</div>'
+          +'<div class="sb-bar-wrap"><div class="sb-bar" style="width:'+barW+'%"></div></div>'
+          +'<div><div class="sb-stat">'+valStr+'</div><div class="sb-sub">'+r.sub+'</div></div>'
+          +'</div>';
+      }).join("");
+    }
+
+    const periodTabs='<div class="sb-tabs">'
+      +'<div class="sb-tab '+(sbPeriod==="week"?"active":"")+'" data-action="sb-period" data-p="week">This Week</div>'
+      +'<div class="sb-tab '+(sbPeriod==="month"?"active":"")+'" data-action="sb-period" data-p="month">This Month</div>'
+      +'<div class="sb-tab '+(sbPeriod==="year"?"active":"")+'" data-action="sb-period" data-p="year">This Year</div>'
+      +'</div>';
+
+    const sectionIds=["overall","attempts","bestday","improved","cats"];
+    const sectionLabels=["Overall %","Most Shots","Best Day","Improved","By Category"];
+    const sectionTabs='<div class="sb-tabs">'+sectionIds.map(function(id,i){
+      return '<div class="sb-tab '+(sbSection===id?"active":"")+'" data-action="sb-sec" data-s="'+id+'">'+sectionLabels[i]+'</div>';
+    }).join("")+'</div>';
+
+    let content="";
+    if(sbSection==="overall")  content='<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>'+sbRows(overall)+'</div>';
+    if(sbSection==="attempts") content='<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>'+sbRows(attempts,true)+'</div>';
+    if(sbSection==="bestday")  content='<div class="sb-section"><div class="sb-section-title">Best single day</div>'+sbRows(bestDay)+'</div>';
+    if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>'+sbRows(improved,false,true)+'</div>';
+    if(sbSection==="cats")     content=catRanks.map(function(cr){return'<div class="sb-section"><div class="sb-section-title">'+cr.cat+'</div>'+sbRows(cr.rows)+'</div>';}).join("");
+
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+      +'<button data-action="go-home">\u2190 Back</button>'
+      +'<span style="font-weight:500;font-size:15px">\uD83C\uDFC6 '+teamName+' Rankings</span>'
+      +'</div>'
+      +kingBanner
+      +'<div class="sb-wrap">'
+      +'<div class="sb-title">\uD83C\uDFC0 Team Rankings</div>'
+      +periodTabs
+      +'<div class="period-label">'+periodLabel+'</div>'
+      +sectionTabs
+      +content
+      +'</div>';
+
   } catch(e) {
-    return`<div class="card" style="padding:20px;text-align:center">
-      <div style="color:#A32D2D;font-size:13px;margin-bottom:8px">⚠️ Leaderboard error</div>
-      <div style="font-size:11px;color:#888">${e.message}</div>
-      <button data-action="go-home" style="margin-top:12px">← Back</button>
-    </div>`;
+    return '<div class="card" style="padding:20px;text-align:center">'
+      +'<div style="color:#A32D2D;font-size:13px;margin-bottom:8px">Leaderboard error: '+e.message+'</div>'
+      +'<button data-action="go-home" style="margin-top:12px">Back</button>'
+      +'</div>';
   }
 }
+
 
 // ── About / Feature Explainer ────────────────
 function buildAbout() {
