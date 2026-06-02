@@ -565,7 +565,10 @@ function buildHome() {
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div style="font-size:11px;color:#888">Team Code: <strong>${teamCode}</strong></div>
-      <button onclick="handleSwitchTeam()" style="font-size:11px;color:#888;padding:4px 8px">Switch Team</button>
+      <div style="display:flex;gap:6px">
+        <button onclick="refreshData()" style="font-size:11px;color:#888;padding:4px 8px">🔄 Refresh</button>
+        <button onclick="handleSwitchTeam()" style="font-size:11px;color:#888;padding:4px 8px">Switch Team</button>
+      </div>
     </div>
     <div class="card"><h3>Select your name</h3>${btns}</div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:4px;flex-wrap:wrap">
@@ -632,6 +635,7 @@ function buildCoach() {
   const tabs=["dashboard","roster","messages","settings"];
   const nav=`<div class="nav-bar">
     ${tabs.map(t=>`<button data-action="ctab" data-t="${t}" class="${coachTab===t?"btn-primary":""}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join("")}
+    <button onclick="refreshData()" style="font-size:11px;color:#888;margin-left:4px">🔄</button>
     <button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button>
   </div>`;
   let body="";
@@ -1299,7 +1303,17 @@ function buildLeaderboard() {
   const kingData=roster.map(n=>{const t=playerTotals(n,kingWeeks),wMade=playerWeightedMakes(n,kingWeeks);return{name:n,made:t.m,weighted:wMade,pct:t.pct};}).filter(p=>p.weighted>0).sort((a,b)=>b.weighted-a.weighted);
   const king=kingData[0]||null;
   let streak=0;
-  if(king){const currentWk=weekKey(),pastWks=[...new Set(allShots.map(s=>s.week))].filter(w=>w<currentWk).sort().reverse();for(const wk2 of pastWks){const wkData=roster.map(n=>({name:n,w:playerWeightedMakes(n,[wk2])})).filter(p=>p.w>0).sort((a,b)=>b.w-a.w);if(wkData[0]?.name===king.name)streak++;else break;}}
+  try {
+    if(king){
+      const currentWk=weekKey();
+      const pastWks=[...new Set(allShots.map(s=>s.week))].filter(w=>w<currentWk).sort().reverse().slice(0,10);
+      for(const wk2 of pastWks){
+        const wkData=roster.map(n=>({name:n,w:playerWeightedMakes(n,[wk2])})).filter(p=>p.w>0).sort((a,b)=>b.w-a.w);
+        if(wkData[0]?.name===king.name)streak++;
+        else break;
+      }
+    }
+  } catch(e) { streak=0; }
   const kingBanner=king?`
     <div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">
       <div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week's Shooting King</div>
@@ -1723,6 +1737,27 @@ async function changeSpotCount(cat,delta) {
 
 function selectDay(d){selectedDay=d;render(buildPlayer());}
 
+// ── Refresh ───────────────────────────────────
+async function refreshData() {
+  if(!teamCode) return;
+  await loadShots();
+  await loadNotes();
+  await loadSpotNames();
+  await loadSpotCounts();
+  await loadDailyCheckins();
+  await loadWeeklyCheckins();
+  await loadPlayerPins();
+  await loadCoachComments();
+  await loadMessages();
+  await loadMessageReads();
+  // Re-render current screen
+  if(screen==="home")        render(buildHome());
+  if(screen==="leaderboard") render(buildLeaderboard());
+  if(screen==="coach")       render(buildCoach());
+  if(screen==="summary")     render(buildSummary());
+  if(screen==="player")      render(buildPlayer());
+}
+
 // ── Boot ──────────────────────────────────────
 async function boot() {
   render(`<div class="loading">Loading...</div>`);
@@ -1730,7 +1765,11 @@ async function boot() {
   await loadTeams();
   if(!hasSeenOnboarding()){onboardStep=0;screen="onboarding";render(buildOnboarding());return;}
   const saved=savedTeam();
-  if(saved){const err=await joinTeam(saved);if(!err){screen="home";render(buildHome());return;}}
+  if(saved){const err=await joinTeam(saved);if(!err){screen="home";render(buildHome());
+    // Auto-refresh every 2 minutes
+    setInterval(refreshData, 120000);
+    return;
+  }}
   screen="team-select";render(buildTeamSelect());
 }
 
