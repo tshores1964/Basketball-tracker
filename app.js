@@ -1332,12 +1332,17 @@ function buildLeaderboard() {
   const bestDay=ranked(roster.map(n=>{const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""};}));
   const improved=ranked(roster.map(n=>{const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?`${i.prev}% → ${i.curr}%`:""};}));
   const catRanks=CATS.map(cat=>({cat,rows:ranked(roster.map(n=>{const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:`${c.m}/${c.a}`};}))}));
-  function sbRows(rows,isAtt=false,isDiff=false){
-    if(!rows.length)return`<div class="sb-no-data">No data yet — get to work! 🏀</div>`;
+  function sbRows(rows,isAtt,isDiff){
+    isAtt=isAtt||false;isDiff=isDiff||false;
+    if(!rows.length)return'<div class="sb-no-data">No data yet — get to work! 🏀</div>';
     const max=rows[0].val||1;
-    return rows.map((r,i)=>{const barW=Math.round((r.val/max)*100),valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%";
-      return`<div class="sb-row ${i<3?`medal-${i+1}`:""}"><div class="sb-rank ${rankMedal(i)}">${rankSymbol(i)}</div><div class="sb-avatar">${initials(r.name)}</div><div class="sb-name">${r.name}</div><div class="sb-bar-wrap"><div class="sb-bar" style="width:${barW}%"></div></div><div><div class="sb-stat">${valStr}</div><div class="sb-sub">${r.sub}</div></div></div>`;
-    }).join("");}
+    return rows.map(function(r,i){
+      const barW=Math.round((r.val/max)*100);
+      const valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%";
+      const medalClass=i<3?"medal-"+(i+1):"";
+      return'<div class="sb-row '+medalClass+'"><div class="sb-rank '+rankMedal(i)+'">'+rankSymbol(i)+'</div><div class="sb-avatar">'+initials(r.name)+'</div><div class="sb-name">'+r.name+'</div><div class="sb-bar-wrap"><div class="sb-bar" style="width:'+barW+'%"></div></div><div><div class="sb-stat">'+valStr+'</div><div class="sb-sub">'+r.sub+'</div></div></div>';
+    }).join("");
+  }
   const sections=[{id:"overall",label:"Overall %"},{id:"attempts",label:"Most Shots"},{id:"bestday",label:"Best Day"},{id:"improved",label:"Improved"},{id:"cats",label:"By Category"}];
   let content="";
   if(sbSection==="overall")  content=`<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>${sbRows(overall)}</div>`;
