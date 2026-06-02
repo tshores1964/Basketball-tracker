@@ -60,8 +60,10 @@ let allWeeklyCheckins = [];
 let allWeights = [];
 let allPlayerPins = [];
 let allCoachComments = [];
-let teamCompete  = false;   // whether this team is opted into league
-let leagueShots  = [];      // shots from all competing teams
+let allMessages = [];
+let allMessageReads = [];
+let teamCompete  = false;
+let leagueShots  = [];
 let leagueRosters = {};     // { teamCode: [playerNames] }
 let leagueTeams  = [];      // competing team objects
 let checkinTemp = {};
@@ -170,6 +172,45 @@ async function loadCoachComments() {
   if(!teamCode)return;
   const {data,error}=await db.from("coach_comments").select("*").eq("team_code",teamCode);
   if(error){console.error(error);return;} allCoachComments=data||[];
+}
+
+async function loadMessages() {
+  if(!teamCode)return;
+  const {data,error}=await db.from("messages").select("*").eq("team_code",teamCode).order("created_at",{ascending:false});
+  if(error){console.error(error);return;} allMessages=data||[];
+}
+
+async function loadMessageReads() {
+  if(!teamCode)return;
+  const {data,error}=await db.from("message_reads").select("*").eq("team_code",teamCode);
+  if(error){console.error(error);return;} allMessageReads=data||[];
+}
+
+async function sendMessage(text) {
+  const {data,error}=await db.from("messages").insert({team_code:teamCode,text}).select().single();
+  if(!error&&data) allMessages.unshift(data);
+  return error;
+}
+
+async function markMessageRead(messageId, player) {
+  const existing=allMessageReads.find(r=>r.message_id===messageId&&r.player===player);
+  if(existing)return;
+  const {data,error}=await db.from("message_reads").insert({message_id:messageId,player,team_code:teamCode}).select().single();
+  if(!error&&data) allMessageReads.push(data);
+}
+
+async function deleteMessage(messageId) {
+  await db.from("messages").delete().eq("id",messageId);
+  allMessages=allMessages.filter(m=>m.id!==messageId);
+  allMessageReads=allMessageReads.filter(r=>r.message_id!==messageId);
+}
+
+function getUnreadMessages(player) {
+  return allMessages.filter(m=>!allMessageReads.find(r=>r.message_id===m.id&&r.player===player));
+}
+
+function hasUnreadMessages(player) {
+  return getUnreadMessages(player).length > 0;
 }
 
 async function saveCompete(val) {
@@ -292,6 +333,7 @@ async function joinTeam(code) {
   await loadRoster(); await loadShots(); await loadNotes(); await loadSpotNames();
   await loadSpotCounts(); await loadDailyCheckins(); await loadWeeklyCheckins();
   await loadWeights(); await loadPlayerPins(); await loadCoachComments();
+  await loadMessages(); await loadMessageReads();
   // Load compete flag for this team
   const thisTeam = teams.find(t=>t.code===teamCode) || (await db.from("teams").select("*").eq("code",teamCode).single()).data;
   teamCompete = thisTeam ? !!thisTeam.compete : false;
@@ -506,9 +548,11 @@ function buildHome() {
     :roster.map(n=>{
       const hasPin=getPlayerPin(n)!==null;
       const unlocked=isPlayerUnlocked(n,teamCode);
+      const hasMsg=hasUnreadMessages(n);
       return `<button class="player-btn" data-action="sel-player" data-name="${n}">
         <div class="avatar">${initials(n)}</div>
         <span style="flex:1">${n}</span>
+        ${hasMsg?`<span style="font-size:11px;background:#1A3A5C;color:#FFD700;padding:2px 7px;border-radius:10px;margin-right:4px">📢 msg</span>`:''}
         <span style="font-size:11px;color:${unlocked?'#27500A':hasPin?'#888':'#2E75B6'};margin-left:4px">
           ${unlocked?'🔓':hasPin?'🔒':'🔑 Set PIN'}
         </span>
@@ -585,7 +629,7 @@ function pinKey(k) {
 
 // ── Coach panel ───────────────────────────────
 function buildCoach() {
-  const tabs=["dashboard","roster","settings"];
+  const tabs=["dashboard","roster","messages","settings"];
   const nav=`<div class="nav-bar">
     ${tabs.map(t=>`<button data-action="ctab" data-t="${t}" class="${coachTab===t?"btn-primary":""}">${t.charAt(0).toUpperCase()+t.slice(1)}</button>`).join("")}
     <button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button>
@@ -593,6 +637,7 @@ function buildCoach() {
   let body="";
   if(coachTab==="dashboard") body=buildDash();
   if(coachTab==="roster")    body=coachViewPlayer ? buildCoachPlayerView() : buildRoster();
+  if(coachTab==="messages")  body=buildCoachMessages();
   if(coachTab==="settings")  body=buildSettings();
   return nav+body;
 }
@@ -710,6 +755,57 @@ function buildCoachPlayerView() {
 
 function coachSelectDay(d) { coachCommentDay=d; render(buildCoach()); }
 
+function buildCoachMessages() {
+  const readCounts = allMessages.map(m => {
+    const reads = allMessageReads.filter(r=>r.message_id===m.id).length;
+    const total = roster.length;
+    return { ...m, reads, total };
+  });
+
+  const msgList = readCounts.length
+    ? readCounts.map(m => {
+        const timeAgo = (() => {
+          const diff = Date.now() - new Date(m.created_at).getTime();
+          const mins = Math.floor(diff/60000);
+          const hrs  = Math.floor(diff/3600000);
+          const days = Math.floor(diff/86400000);
+          if(days>0) return `${days}d ago`;
+          if(hrs>0)  return `${hrs}h ago`;
+          if(mins>0) return `${mins}m ago`;
+          return "Just now";
+        })();
+        const unreadPlayers = roster.filter(p=>!allMessageReads.find(r=>r.message_id===m.id&&r.player===p));
+        return `
+          <div style="padding:12px 14px;border:0.5px solid #e0e0e0;border-radius:10px;margin-bottom:8px;background:#fafafa">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+              <div style="font-size:12px;color:#888">${timeAgo}</div>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="font-size:11px;color:${m.reads===m.total?'#27500A':'#856404'};background:${m.reads===m.total?'#E6F7EC':'#FFF9E6'};padding:2px 8px;border-radius:10px">
+                  ${m.reads}/${m.total} read
+                </div>
+                <button data-action="delete-message" data-id="${m.id}" style="font-size:11px;color:#A32D2D;background:none;border:none;padding:2px 4px;cursor:pointer">🗑</button>
+              </div>
+            </div>
+            <div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:6px">${m.text}</div>
+            ${unreadPlayers.length>0?`<div style="font-size:10px;color:#888">Not yet read: ${unreadPlayers.join(", ")}</div>`:""}
+          </div>`;
+      }).join("")
+    : `<div style="text-align:center;padding:20px;color:#888;font-size:13px">No messages sent yet.</div>`;
+
+  return `
+    <div class="card">
+      <h3>📢 Send Team Message</h3>
+      <p style="font-size:12px;color:#888;margin-bottom:10px">Players see this as a banner when they open the app.</p>
+      <textarea id="msg-text" placeholder="e.g. Great practice today! Owen — you're the King this week. Everyone needs to get their numbers in by Sunday night."
+        style="width:100%;min-height:80px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;background:#fafafa;margin-bottom:10px"></textarea>
+      <button data-action="send-message" class="btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:500">📤 Send to All Players</button>
+    </div>
+    <div class="card">
+      <h3>Sent Messages</h3>
+      ${msgList}
+    </div>`;
+}
+
 function buildSettings() {
   return`
     <div class="card">
@@ -744,6 +840,16 @@ function buildPlayer() {
   const name=curPlayer,wk=weekKey();
   const tot=playerTotals(name,[wk]);
   const isMobile=window.innerWidth<700;
+
+  // Build unread message banners
+  const unread=getUnreadMessages(name);
+  const msgBanners=unread.map(m=>`
+    <div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:10px;color:#FFD700;text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:6px">📢 Message from Coach</div>
+      <div style="font-size:13px;color:#fff;line-height:1.5;margin-bottom:10px">${m.text}</div>
+      <button data-action="dismiss-message" data-id="${m.id}" class="btn-primary" style="width:100%;padding:8px;font-size:12px;background:#FFD700;color:#1A3A5C;font-weight:500">Got it 👍</button>
+    </div>`).join("");
+
   let html=`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <button data-action="go-home">← Back</button>
@@ -757,6 +863,7 @@ function buildPlayer() {
         <div style="font-size:10px;color:#888">${tot.m}/${tot.a} shots</div>
       </div>
     </div>
+    ${msgBanners}
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button data-action="go-summary" class="btn-primary" style="flex:1;padding:8px;font-size:12px">📊 My Summary</button>
     </div>`;
@@ -1445,7 +1552,7 @@ async function handleCreateTeam() {
   screen="coach";coachOpen=true;coachTab="roster";render(buildCoach());
 }
 function handleNewTeam(){screen="create-team";render(buildCreateTeam());}
-function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
+function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];allMessages=[];allMessageReads=[];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
 
 // ── Event handling ────────────────────────────
 function attachEvents() {
@@ -1476,7 +1583,25 @@ function attachEvents() {
       const gmailUrl = `https://mail.google.com/mail/?view=cm&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.open(gmailUrl, '_blank');
     }
-    if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
+    if(a==="send-message"){
+      if(b.disabled)return;
+      const text=(document.getElementById("msg-text")?.value||"").trim();
+      if(!text){showToast("Type a message first.");return;}
+      b.disabled=true;b.textContent="Sending...";
+      const err=await sendMessage(text);
+      if(err){showToast("Error sending message.");b.disabled=false;b.textContent="📤 Send to All Players";return;}
+      showToast("✓ Message sent to all players!");
+      render(buildCoach());
+    }
+    if(a==="delete-message"){
+      if(!confirm("Delete this message?"))return;
+      await deleteMessage(b.dataset.id);
+      render(buildCoach());
+    }
+    if(a==="dismiss-message"){
+      await markMessageRead(b.dataset.id, curPlayer);
+      render(buildPlayer());
+    }
     if(a==="go-league"){screen="league";buildLeague();}
     if(a==="toggle-compete"){
       const btn=b;btn.disabled=true;btn.textContent="Saving...";
