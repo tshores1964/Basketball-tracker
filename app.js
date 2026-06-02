@@ -1315,24 +1315,26 @@ function buildLeaderboard() {
       }
     }
   } catch(e) { streak=0; }
-  const kingBanner=king?`
-    <div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">
-      <div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week's Shooting King</div>
-      <div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">${king.name}</div>
-      <div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap">
-        <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">${Math.round(king.weighted*10)/10}</div><div style="font-size:10px;color:#888">King Points</div></div>
-        <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">${king.made}</div><div style="font-size:10px;color:#888">Shots Made</div></div>
-        <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">${king.pct===null?"—":king.pct+"%"}</div><div style="font-size:10px;color:#888">Shooting %</div></div>
-        <div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">${streak}</div><div style="font-size:10px;color:#888">Week Streak</div></div>
-      </div>
-      ${streak>=2?`<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 ${streak} weeks in a row!</div>`:""}
-    </div>`:`<div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px"><div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div></div>`;
-  function ranked(arr){return arr.filter(x=>x.val!==null).sort((a,b)=>(b.exact||b.val)-(a.exact||a.val));}
-  const overall=ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:`${t.m}/${t.a} shots`};}));
-  const attempts=ranked(roster.map(n=>{const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:`${t.m} made`};}));
-  const bestDay=ranked(roster.map(n=>{const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?`${b.day} — ${b.m}/${b.a}`:""};}));
-  const improved=ranked(roster.map(n=>{const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?`${i.prev}% → ${i.curr}%`:""};}));
-  const catRanks=CATS.map(cat=>({cat,rows:ranked(roster.map(n=>{const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:`${c.m}/${c.a}`};}))}));
+  const kingBanner = king
+    ? '<div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center">'
+      + '<div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week\'s Shooting King</div>'
+      + '<div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">'+king.name+'</div>'
+      + '<div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap">'
+      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+Math.round(king.weighted*10)/10+'</div><div style="font-size:10px;color:#888">King Points</div></div>'
+      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+king.made+'</div><div style="font-size:10px;color:#888">Shots Made</div></div>'
+      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+(king.pct===null?"—":king.pct+"%")+'</div><div style="font-size:10px;color:#888">Shooting %</div></div>'
+      + '<div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+streak+'</div><div style="font-size:10px;color:#888">Week Streak</div></div>'
+      + '</div>'
+      + (streak>=2?'<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 '+streak+' weeks in a row!</div>':"")
+      + '</div>'
+    : '<div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px"><div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div></div>';
+
+  function ranked(arr){return arr.filter(function(x){return x.val!==null;}).sort(function(a,b){return(b.exact||b.val)-(a.exact||a.val);});}
+  const overall=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:t.m+"/"+t.a+" shots"};}));
+  const attempts=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:t.m+" made"};}));
+  const bestDay=ranked(roster.map(function(n){const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?b.day+" — "+b.m+"/"+b.a:""};}));
+  const improved=ranked(roster.map(function(n){const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?i.prev+"% → "+i.curr+"%":""};}));
+  const catRanks=CATS.map(function(cat){return{cat:cat,rows:ranked(roster.map(function(n){const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:c.m+"/"+c.a};}))};});
   function sbRows(rows,isAtt,isDiff){
     isAtt=isAtt||false;isDiff=isDiff||false;
     if(!rows.length)return'<div class="sb-no-data">No data yet — get to work! 🏀</div>';
@@ -1346,11 +1348,11 @@ function buildLeaderboard() {
   }
   const sections=[{id:"overall",label:"Overall %"},{id:"attempts",label:"Most Shots"},{id:"bestday",label:"Best Day"},{id:"improved",label:"Improved"},{id:"cats",label:"By Category"}];
   let content="";
-  if(sbSection==="overall")  content=`<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>${sbRows(overall)}</div>`;
-  if(sbSection==="attempts") content=`<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>${sbRows(attempts,true)}</div>`;
-  if(sbSection==="bestday")  content=`<div class="sb-section"><div class="sb-section-title">Best single day</div>${sbRows(bestDay)}</div>`;
-  if(sbSection==="improved") content=`<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>${sbRows(improved,false,true)}</div>`;
-  if(sbSection==="cats")     content=catRanks.map(({cat,rows})=>`<div class="sb-section"><div class="sb-section-title">${cat}</div>${sbRows(rows)}</div>`).join("");
+  if(sbSection==="overall")  content='<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>'+sbRows(overall)+'</div>';
+  if(sbSection==="attempts") content='<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>'+sbRows(attempts,true)+'</div>';
+  if(sbSection==="bestday")  content='<div class="sb-section"><div class="sb-section-title">Best single day</div>'+sbRows(bestDay)+'</div>';
+  if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>'+sbRows(improved,false,true)+'</div>';
+  if(sbSection==="cats")     content=catRanks.map(function(cr){return'<div class="sb-section"><div class="sb-section-title">'+cr.cat+'</div>'+sbRows(cr.rows)+'</div>';}).join("");
   const sectionTabs = sections.map(function(s){
     return '<div class="sb-tab '+(sbSection===s.id?"active":"")+'" data-action="sb-sec" data-s="'+s.id+'">'+s.label+'</div>';
   }).join("");
