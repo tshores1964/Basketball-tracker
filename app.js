@@ -586,25 +586,15 @@ function buildOnboarding() {
 }
 
 function buildTeamSelect() {
-  return `
-    <div class="banner">
-      <div class="banner-quote">"What gets measured, improves"</div>
-      <div class="banner-sub">Sharpshooter</div>
-    </div>
-    <div class="card">
-      <h3>Enter your team code</h3>
-      <p style="font-size:12px;color:#888;margin-bottom:10px">Your coach will give you a 6-character team code.</p>
-      <div class="row-flex">
-        <input type="text" id="join-code" maxlength="6" placeholder="e.g. HOOPS1" value="${joinCodeInput}"
-          style="flex:1;text-transform:uppercase;font-size:18px;font-weight:500;letter-spacing:3px;text-align:center" />
-        <button onclick="handleJoin()" class="btn-primary">Join</button>
-      </div>
-      +(joinErr?'<p class="err">'+h(joinErr)+'</p>':"")+
-    </div>
-    <div style="text-align:center;margin-top:8px">
-      <button onclick="handleNewTeam()" class="btn-primary" style="margin-right:8px">+ Create New Team</button>
-      <button data-action="go-coach-global" style="font-size:12px;color:#888">🔒 Coach</button>
-    </div>`;
+  return '<div class="banner"><div class="banner-quote">"What gets measured, improves"</div><div class="banner-sub">Sharpshooter</div></div>'
+    +'<div class="card"><h3>Enter your team code</h3>'
+    +'<p style="font-size:12px;color:#888;margin-bottom:10px">Your coach will give you a 6-character team code.</p>'
+    +'<div class="row-flex"><input type="text" id="join-code" maxlength="6" placeholder="e.g. HOOPS1" value="'+h(joinCodeInput)+'" style="flex:1;text-transform:uppercase;font-size:18px;font-weight:500;letter-spacing:3px;text-align:center" />'
+    +'<button onclick="handleJoin()" class="btn-primary">Join</button></div>'
+    +(joinErr?'<p class="err">'+h(joinErr)+'</p>':"")
+    +'</div>'
+    +'<div style="text-align:center;margin-top:8px"><button onclick="handleNewTeam()" class="btn-primary" style="margin-right:8px">+ Create New Team</button>'
+    +'<button data-action="go-coach-global" style="font-size:12px;color:#888">🔒 Coach</button></div>';
 }
 
 function buildCreateTeam() {
@@ -666,27 +656,26 @@ function buildHome() {
 }
 
 function buildPin() {
-  const dots=Array.from({length:4},(_,i)=>`<div class="pin-dot ${i<pinEntry.length?"filled":""}"></div>`).join("");
+  const dots=Array.from({length:4},function(_,i){return'<div class="pin-dot '+(i<pinEntry.length?"filled":"")+'"></div>';}).join("");
   const keys=[1,2,3,4,5,6,7,8,9,null,0,"back"];
-  const keyBtns=keys.map(k=>{
-    if(k===null)return`<div></div>`;
-    if(k==="back")return`<button onclick="pinKey('back')" style="padding:14px;font-size:18px">⌫</button>`;
-    return`<button onclick="pinKey('${k}')" style="padding:14px;font-size:18px">${k}</button>`;
+  const keyBtns=keys.map(function(k){
+    if(k===null)return'<div></div>';
+    if(k==="back")return'<button onclick="pinKey(\'back\')" style="padding:14px;font-size:18px">⌫</button>';
+    return'<button onclick="pinKey(\''+k+'\')" style="padding:14px;font-size:18px">'+k+'</button>';
   }).join("");
-  let title="Coach PIN",subtitle=teamName?`<div style="font-size:11px;color:#888;margin-bottom:8px">${teamName}</div>`:"",hint="";
-  if(pinMode==="player-setup"){title="Set Your PIN";subtitle=`<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;hint=`<div style="font-size:11px;color:#888;margin-top:4px">Choose a 4-digit PIN to protect your data.</div>`;}
-  else if(pinMode==="player-confirm"){title="Confirm Your PIN";subtitle=`<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;hint=`<div style="font-size:11px;color:#888;margin-top:4px">Enter the same PIN again.</div>`;}
-  else if(pinMode==="player-enter"){title="Enter Your PIN";subtitle=`<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">${curPlayer}</div>`;hint=`<div style="font-size:11px;color:#888;margin-top:4px">Or ask your coach to unlock it.</div>`;}
-  return `
-    <div class="card" style="max-width:280px;margin:20px auto;text-align:center">
-      <h3>${title}</h3>${subtitle}
-      <div class="pin-dots">${dots}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">${keyBtns}</div>
-      +(pinErr?'<p class="err">'+h(pinErr)+'</p>':"")+${hint}
-      <button data-action="go-home" style="width:100%;margin-top:10px;font-size:12px">Cancel</button>
-    </div>`;
+  var title="Coach PIN",subtitle=teamName?'<div style="font-size:11px;color:#888;margin-bottom:8px">'+h(teamName)+'</div>':"",hint="";
+  if(pinMode==="player-setup"){title="Set Your PIN";subtitle='<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">'+h(curPlayer)+'</div>';hint='<div style="font-size:11px;color:#888;margin-top:4px">Choose a 4-digit PIN to protect your data.</div>';}
+  else if(pinMode==="player-confirm"){title="Confirm Your PIN";subtitle='<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">'+h(curPlayer)+'</div>';hint='<div style="font-size:11px;color:#888;margin-top:4px">Enter the same PIN again.</div>';}
+  else if(pinMode==="player-enter"){title="Enter Your PIN";subtitle='<div style="font-size:12px;color:#1A3A5C;margin-bottom:8px;font-weight:500">'+h(curPlayer)+'</div>';hint='<div style="font-size:11px;color:#888;margin-top:4px">Or ask your coach to unlock it.</div>';}
+  return '<div class="card" style="max-width:280px;margin:20px auto;text-align:center">'
+    +'<h3>'+title+'</h3>'+subtitle
+    +'<div class="pin-dots">'+dots+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">'+keyBtns+'</div>'
+    +(pinErr?'<p class="err">'+h(pinErr)+'</p>':"")
+    +hint
+    +'<button data-action="go-home" style="width:100%;margin-top:10px;font-size:12px">Cancel</button>'
+    +'</div>';
 }
-
 function pinKey(k) {
   if(k==="back"){pinEntry=pinEntry.slice(0,-1);render(buildPin());return;}
   if(pinEntry.length>=4)return;
@@ -717,11 +706,10 @@ function pinKey(k) {
 // ── Coach panel ───────────────────────────────
 function buildCoach() {
   const tabs=["dashboard","roster","messages","categories","settings"];
-  const nav=`<div class="nav-bar">
-    +tabs.map(function(t){return'<button data-action="ctab" data-t="'+t+'" class="'+(coachTab===t?"btn-primary":"")+'">'+t.charAt(0).toUpperCase()+t.slice(1)+'</button>';}).join("")+
-    <button onclick="refreshData()" style="font-size:11px;color:#888;margin-left:4px">🔄</button>
-    <button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button>
-  </div>`;
+  const nav='<div class="nav-bar">'
+    +tabs.map(function(t){return'<button data-action="ctab" data-t="'+t+'" class="'+(coachTab===t?"btn-primary":"")+'">'+ t.charAt(0).toUpperCase()+t.slice(1)+'</button>';}).join("")
+    +'<button onclick="refreshData()" style="font-size:11px;color:#888;margin-left:4px">🔄</button>'
+    +'<button data-action="go-home" style="margin-left:auto;font-size:12px">← Exit</button></div>';
   let body="";
   if(coachTab==="dashboard")  body=buildDash();
   if(coachTab==="roster")     body=coachViewPlayer ? buildCoachPlayerView() : buildRoster();
@@ -733,63 +721,54 @@ function buildCoach() {
 
 function buildDash() {
   const wk=weekKey(),weeks=[wk];
-  if(!roster.length)return`<div class="card"><p style="color:#888">Add players in the Roster tab.</p></div>`;
+  if(!roster.length)return'<div class="card"><p style="color:#888">Add players in the Roster tab.</p></div>';
   const catShort=["Form","C&S","C&S 3","PU","PU 3","Finish"];
-  const rows=roster.map(name=>{
+  const rows=roster.map(function(name){
     const cats=playerCatTotals(name,weeks),tot=playerTotals(name,weeks);
-    return`<tr><td style="font-weight:500">${name}</td>+CATS.map(function(c){const p=cats[c]?cats[c].pct:null;return'<td class="'+pctClass(p)+'">'+( p===null?"--":p+"%" )+"</td>";}).join("")+<td class="${pctClass(tot.pct)}" style="font-weight:500">${tot.pct===null?"—":tot.pct+"%"}</td><td style="color:#888">${tot.m}/${tot.a}</td></tr>`;
+    return'<tr><td style="font-weight:500">'+h(name)+'</td>'
+      +CATS.map(function(c){const p=cats[c]?cats[c].pct:null;return'<td class="'+pctClass(p)+'">'+(p===null?"--":p+"%")+"</td>";}).join("")
+      +'<td class="'+pctClass(tot.pct)+'" style="font-weight:500">'+(tot.pct===null?"--":tot.pct+"%")+'</td><td style="color:#888">'+tot.m+"/"+tot.a+'</td></tr>';
   }).join("");
-  const catAvgs=CATS.map((cat,ci)=>{
-    let tm=0,ta=0;roster.forEach(n=>{const c=playerCatTotals(n,weeks)[cat];tm+=c.m;ta+=c.a;});
+  const catAvgs=CATS.map(function(cat,ci){
+    let tm=0,ta=0;roster.forEach(function(n){const c=playerCatTotals(n,weeks)[cat];tm+=c.m;ta+=c.a;});
     const p=ta?Math.round(tm/ta*100):null;
-    return`<div class="metric"><div class="metric-label">${catShort[ci]}</div><div class="metric-val ${pctClass(p)}">${p===null?"—":p+"%"}</div></div>`;
+    return'<div class="metric"><div class="metric-label">'+(catShort[ci]||cat)+'</div><div class="metric-val '+pctClass(p)+'">'+(p===null?"--":p+"%")+'</div></div>';
   }).join("");
-  return`
-    <div class="card">
-      <div style="font-size:11px;color:#888;margin-bottom:4px">Team: <strong>${teamName}</strong> · Code: <strong>${teamCode}</strong> · Week of ${fmtWeek(wk)}</div>
-      <h3>Team this week</h3>
-      <div style="overflow-x:auto"><table class="dash">
-        <thead><tr><th style="text-align:left">Player</th>+catShort.map(function(c){return"<th>"+c+"</th>";}).join("")+<th>Overall</th><th>M/A</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>
-    </div>
-    <div class="card"><h3>Category averages</h3><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${catAvgs}</div></div>`;
+  const thCats=catShort.map(function(c){return"<th>"+c+"</th>";}).join("");
+  return '<div class="card">'
+    +'<div style="font-size:11px;color:#888;margin-bottom:4px">Team: <strong>'+h(teamName)+'</strong> · Code: <strong>'+h(teamCode)+'</strong> · Week of '+fmtWeek(wk)+'</div>'
+    +'<h3>Team this week</h3>'
+    +'<div style="overflow-x:auto"><table class="dash"><thead><tr><th style="text-align:left">Player</th>'+thCats+'<th>Overall</th><th>M/A</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table></div></div>'
+    +'<div class="card"><h3>Category averages</h3><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">'+catAvgs+'</div></div>';
 }
-
 function buildRoster() {
-  const items=roster.length
-    ?roster.map(n=>{
+  var items="";
+  if(roster.length===0){
+    items='<p style="color:#888;font-size:13px;padding:6px 0">No players yet.</p>';
+  } else {
+    roster.forEach(function(n){
       const hasPin=getPlayerPin(n)!==null;
       const playerComment=getCoachComment(n,"player",null,null);
-      return`<div class="roster-item">
-        <div style="display:flex;align-items:center;gap:9px">
-          <div class="avatar">${initials(n)}</div>
-          <div>
-            <div>${n}</div>
-            <div style="font-size:10px;color:${hasPin?'#888':'#2E75B6'}">${hasPin?'🔒 PIN set':'🔑 No PIN yet'}</div>
-              +(playerComment?'<div style="font-size:10px;color:#856404;margin-top:1px">Has coach note</div>':'')
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
-          <button class="btn-sm btn-primary" data-action="coach-view-player" data-name="${n}" style="font-size:11px;width:100%">💬 Comments</button>
-          <div style="display:flex;gap:4px">
-            +(hasPin?'<button class="btn-sm" data-action="reset-player-pin" data-name="'+h(n)+'" style="font-size:10px">Reset PIN</button>':'')
-            <button class="btn-sm btn-danger" data-action="rm-player" data-name="${n}">🗑</button>
-          </div>
-        </div>
-      </div>`;
-    }).join("")
-    :`<p style="color:#888;font-size:13px;padding:6px 0">No players yet.</p>`;
-  return`
-    <div class="card"><h3>Roster (${roster.length})</h3>${items}</div>
-    <div class="card">
-      <h3>Add player</h3>
-      <div class="row-flex"><input type="text" id="np" placeholder="Player name" style="flex:1" /><button data-action="add-player" class="btn-primary">Add</button></div>
-      <div id="rmsg"></div>
-    </div>`;
+      items+='<div class="roster-item">'
+        +'<div style="display:flex;align-items:center;gap:9px"><div class="avatar">'+initials(n)+'</div>'
+        +'<div><div>'+h(n)+'</div>'
+        +'<div style="font-size:10px;color:'+(hasPin?'#888':'#2E75B6')+'">'+(hasPin?'🔒 PIN set':'🔑 No PIN yet')+'</div>'
+        +(playerComment?'<div style="font-size:10px;color:#856404;margin-top:1px">Has coach note</div>':"")
+        +'</div></div>'
+        +'<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">'
+        +'<button class="btn-sm btn-primary" data-action="coach-view-player" data-name="'+h(n)+'" style="font-size:11px;width:100%">💬 Comments</button>'
+        +'<div style="display:flex;gap:4px">'
+        +(hasPin?'<button class="btn-sm" data-action="reset-player-pin" data-name="'+h(n)+'" style="font-size:10px">Reset PIN</button>':"")
+        +'<button class="btn-sm btn-danger" data-action="rm-player" data-name="'+h(n)+'">🗑</button>'
+        +'</div></div></div>';
+    });
+  }
+  return '<div class="card"><h3>Roster ('+roster.length+')</h3>'+items+'</div>'
+    +'<div class="card"><h3>Add player</h3>'
+    +'<div class="row-flex"><input type="text" id="np" placeholder="Player name" style="flex:1" /><button data-action="add-player" class="btn-primary">Add</button></div>'
+    +'<div id="rmsg"></div></div>';
 }
-
-// ── Coach player comment view ─────────────────
 function buildCoachPlayerView() {
   const name=coachViewPlayer,wk=weekKey(),tot=playerTotals(name,[wk]);
   const playerCmnt=getCoachComment(name,"player",null,null);
