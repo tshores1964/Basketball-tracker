@@ -513,6 +513,7 @@ function rankSymbol(i){return["🥇","🥈","🥉"][i]||String(i+1);}
 function genCode(){const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";return Array.from({length:6},()=>chars[Math.floor(Math.random()*chars.length)]).join("");}
 function showToast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),2200);}
 function render(html){document.getElementById("app").innerHTML=html;}
+function h(str){return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
 // ══════════════════════════════════════════════
 //  SCREENS
