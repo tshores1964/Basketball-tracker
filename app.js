@@ -630,19 +630,17 @@ function buildCreateTeam() {
 
 function buildHome() {
   const btns=roster.length===0
-    ?`<p style="color:#888;font-size:13px">No players yet — coach can add players in the coach panel.</p>`
-    :roster.map(n=>{
+    ?'<p style="color:#888;font-size:13px">No players yet — coach can add players in the coach panel.</p>'
+    :roster.map(function(n){
       const hasPin=getPlayerPin(n)!==null;
       const unlocked=isPlayerUnlocked(n,teamCode);
       const hasMsg=hasUnreadMessages(n);
-      return `<button class="player-btn" data-action="sel-player" data-name="${n}">
-        <div class="avatar">${initials(n)}</div>
-        <span style="flex:1">${n}</span>
-        +(hasMsg?'<span style="font-size:11px;background:#1A3A5C;color:#FFD700;padding:2px 7px;border-radius:10px;margin-right:4px">msg</span>':'')
-        <span style="font-size:11px;color:${unlocked?'#27500A':hasPin?'#888':'#2E75B6'};margin-left:4px">
-          ${unlocked?'🔓':hasPin?'🔒':'🔑 Set PIN'}
-        </span>
-      </button>`;
+      const pinIcon=unlocked?'🔓':hasPin?'🔒':'🔑 Set PIN';
+      const pinColor=unlocked?'#27500A':hasPin?'#888':'#2E75B6';
+      const msgBadge=hasMsg?'<span style="font-size:11px;background:#1A3A5C;color:#FFD700;padding:2px 7px;border-radius:10px;margin-right:4px">msg</span>':"";
+      return '<button class="player-btn" data-action="sel-player" data-name="'+h(n)+'"><div class="avatar">'+initials(n)+'</div>'
+        +'<span style="flex:1">'+h(n)+'</span>'+msgBadge
+        +'<span style="font-size:11px;color:'+pinColor+';margin-left:4px">'+pinIcon+'</span></button>';
     }).join("");
   return `
     <div class="banner">
@@ -1428,178 +1426,73 @@ function buildLeaderboard() {
 
 // ── About / Feature Explainer ────────────────
 function buildAbout() {
-  const coachContent = `
-    <div style="padding:4px 0">
+  const coachFeatures=[
+    ["Shot Tracking","Players log makes and attempts by category, spot, and day — every workout, every week."],
+    ["Shooting King","A weighted leaderboard crowns the week's best shooter. 3-point makes count more. Pull-ups count more."],
+    ["Mental Performance","Daily and weekly check-ins built on CMPT principles — effort, recovery, confidence, self-talk."],
+    ["Coach Comments","Leave feedback per player, per week, or per day. Only that player sees it."],
+    ["Player Summaries","Week, month, and year stats. Best spot. Progress chart by category. Trend vs last week."],
+    ["League Competition","Opt your team into cross-team competition. Weekly totals compete against other Sharpshooter teams."],
+    ["Player PINs","Each player protects their own data with a personal PIN. Coach has master override."],
+  ];
+  const kingScoring=[
+    ["Form Shooting","0.5x"],["Catch & Shoot","1.0x"],["Finishes","1.0x"],
+    ["1-Dribble Pull-Up","2.0x"],["Catch & Shoot 3s","3.0x"],["1-Dribble Pull-Up 3s","4.0x"],
+  ];
+  const playerSteps=[
+    ["Join Your Team","Your coach gives you a team code. Type it in and you're on the roster."],
+    ["Set Your PIN","Pick a 4-digit PIN. Your data is yours — nobody else can change your numbers."],
+    ["Log Your Workout","Tap your name, pick the day, enter makes and attempts for each spot. Takes 2 minutes."],
+    ["Check the King Board","See who's leading in weighted shooting points. Can you take the crown?"],
+    ["Do Your Check-In","After saving, answer 3 quick questions about your mental game. 30 seconds."],
+    ["See Your Summary","Track your progress week over week. See your best spot and your coach's feedback."],
+  ];
 
-      <div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:12px;padding:20px 18px;margin-bottom:16px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">🎯</div>
-        <div style="font-size:20px;font-weight:500;color:#FFD700;margin-bottom:6px">Sharpshooter</div>
-        <div style="font-size:12px;color:#ccc;font-style:italic;margin-bottom:10px">"What gets measured, improves"</div>
-        <div style="display:inline-block;background:#FFD700;color:#1A3A5C;font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px">MVP — Early Access</div>
-      </div>
+  const coachContent='<div style="padding:4px 0">'
+    +'<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:12px;padding:20px 18px;margin-bottom:16px;text-align:center">'
+    +'<div style="font-size:32px;margin-bottom:8px">🎯</div>'
+    +'<div style="font-size:20px;font-weight:500;color:#FFD700;margin-bottom:6px">Sharpshooter</div>'
+    +'<div style="font-size:12px;color:#ccc;font-style:italic;margin-bottom:10px">"What gets measured, improves"</div>'
+    +'<div style="display:inline-block;background:#FFD700;color:#1A3A5C;font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px">MVP — Early Access</div></div>'
+    +'<div class="card" style="border-left:3px solid #FFD700"><div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🏀 Built by a Coach, for Coaches</div>'
+    +'<div style="font-size:13px;color:#444;line-height:1.7">Sharpshooter was built by Coach Todd Shores — 30+ years coaching youth basketball, CMPT, and a coach who got tired of players not tracking their work.<br><br>This is a <strong>culture tool</strong>. It rewards the work that wins games — the shooting workouts nobody sees.</div></div>'
+    +'<div class="card"><div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">⚙️ What It Does</div>'
+    +coachFeatures.map(function(item){return'<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start"><div style="font-size:13px;font-weight:500;color:#1A3A5C;min-width:0"><strong>'+item[0]+'</strong></div><div style="font-size:12px;color:#555;line-height:1.5">'+item[1]+'</div></div>';}).join("")+'</div>'
+    +'<div class="card" style="background:linear-gradient(135deg,#FFF9E6,#fff);border:1px solid #FFD700">'
+    +'<div style="font-size:13px;font-weight:500;color:#856404;margin-bottom:10px">👑 The King Scoring System</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'
+    +kingScoring.map(function(r){return'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#fff;border-radius:6px;border:0.5px solid #e8d77a"><span style="font-size:11px;color:#555">'+r[0]+'</span><span style="font-size:12px;font-weight:500;color:#856404">'+r[1]+'</span></div>';}).join("")
+    +'</div></div>'
+    +'<div class="card" style="background:#0a0f1a;border:1px solid #334"><div style="font-size:13px;font-weight:500;color:#FFD700;margin-bottom:8px">💰 Pricing — Early Access</div>'
+    +'<div style="font-size:12px;color:#aaa;line-height:1.7">Free MVP version while we build and test with real teams. Full App Store launch coming — <strong style="color:#fff">$9.99/month per team</strong>.</div></div>'
+    +'<div class="card" style="border:1px solid #1A3A5C"><div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:6px">📲 Get Started</div>'
+    +'<ol style="font-size:12px;color:#444;line-height:2;padding-left:18px;margin:0"><li>Open <strong>basketball-tracker-nine.vercel.app</strong></li><li>Add to your home screen</li><li>Create your team and get a team code</li><li>Share the code with your players</li></ol></div>'
+    +'<button data-action="share-coach" class="btn-primary" style="width:100%;padding:14px;font-size:14px;font-weight:500;margin-bottom:8px">📤 Share with Another Coach</button>'
+    +'</div>';
 
-      <div class="card" style="border-left:3px solid #FFD700">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🏀 Built by a Coach, for Coaches</div>
-        <div style="font-size:13px;color:#444;line-height:1.7">
-          Sharpshooter was built by Coach Todd Shores — 30+ years coaching youth basketball, Certified Mental Performance Trainer, and a coach who got tired of players not tracking their work.<br><br>
-          This isn't a stat app. It's a <strong>culture tool</strong>. It rewards the work that wins games — the shooting workouts nobody sees.
-        </div>
-      </div>
+  const playerContent='<div style="padding:4px 0">'
+    +'<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:12px;padding:20px 18px;margin-bottom:16px;text-align:center">'
+    +'<div style="font-size:32px;margin-bottom:8px">🎯</div><div style="font-size:20px;font-weight:500;color:#FFD700;margin-bottom:6px">Sharpshooter</div>'
+    +'<div style="font-size:12px;color:#ccc;font-style:italic">"What gets measured, improves"</div></div>'
+    +'<div class="card" style="border-left:3px solid #FFD700"><div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:8px">The best players track their work.</div>'
+    +'<div style="font-size:13px;color:#444;line-height:1.7">Log your makes, compete for the crown, and get feedback from your coach.</div></div>'
+    +'<div class="card"><div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">📱 How It Works</div>'
+    +playerSteps.map(function(s,i){return'<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start"><div style="font-size:16px;min-width:28px;font-weight:500;color:#1A3A5C">'+(i+1)+'.</div><div><div style="font-size:13px;font-weight:500;color:#1A3A5C">'+s[0]+'</div><div style="font-size:12px;color:#555;line-height:1.5;margin-top:2px">'+s[1]+'</div></div></div>';}).join("")+'</div>'
+    +'<div class="card" style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700">'
+    +'<div style="font-size:13px;font-weight:500;color:#FFD700;margin-bottom:8px">👑 What is the Shooting King?</div>'
+    +'<div style="font-size:12px;color:#aaa;line-height:1.7">The player with the most <strong style="color:#FFD700">weighted makes</strong> in a week. Pull-up threes count <strong style="color:#FFD700">4x</strong> more than form shooting.</div></div>'
+    +'<div class="card"><div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">💬 Coach Feedback</div>'
+    +'<div style="font-size:12px;color:#444;line-height:1.7">Check your <strong>Summary screen</strong> to see notes from your coach. Private — only you see it.</div></div>'
+    +'</div>';
 
-      <div class="card">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">⚙️ What It Does</div>
-        ${[
-          ["🎯","Shot Tracking","Players log makes and attempts by category, spot, and day — every workout, every week."],
-          ["👑","Shooting King","A weighted leaderboard crowns the week's best shooter. 3-point makes count more. Pull-ups count more. Not just raw makes."],
-          ["🧠","Mental Performance","Daily and weekly check-ins built on CMPT principles — effort, recovery, confidence, self-talk. No other shot tracker does this."],
-          ["💬","Coach Comments","Leave feedback per player, per week, or per day. Only that player sees it. Coach-to-player, private."],
-          ["📊","Player Summaries","Week, month, and year stats. Best spot. Progress chart by category. Trend vs last week."],
-          ["🌐","League Competition","Opt your team into cross-team competition. Your team's weekly totals compete against other Sharpshooter teams."],
-          ["🔒","Player PINs","Each player protects their own data with a personal PIN. Coach has master override."],
-        ].map(([icon,title,desc]) => `
-          <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">
-            <div style="font-size:20px;min-width:28px">${icon}</div>
-            <div>
-              <div style="font-size:13px;font-weight:500;color:#1A3A5C">${title}</div>
-              <div style="font-size:12px;color:#555;line-height:1.5;margin-top:2px">${desc}</div>
-            </div>
-          </div>`).join("")}
-      </div>
-
-      <div class="card" style="background:linear-gradient(135deg,#FFF9E6,#fff);border:1px solid #FFD700">
-        <div style="font-size:13px;font-weight:500;color:#856404;margin-bottom:10px">👑 The King Scoring System</div>
-        <div style="font-size:12px;color:#555;margin-bottom:10px;line-height:1.5">Points are weighted by difficulty — because a pull-up three is harder than a layup, and your best shooter should reflect that.</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-          ${[
-            ["Form Shooting","0.5x"],
-            ["Catch & Shoot","1.0x"],
-            ["Finishes","1.0x"],
-            ["1-Dribble Pull-Up","2.0x"],
-            ["Catch & Shoot 3s","3.0x"],
-            ["1-Dribble Pull-Up 3s","4.0x"],
-          ].map(([cat,wt]) => `
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:#fff;border-radius:6px;border:0.5px solid #e8d77a">
-              <span style="font-size:11px;color:#555">${cat}</span>
-              <span style="font-size:12px;font-weight:500;color:#856404">${wt}</span>
-            </div>`).join("")}
-        </div>
-      </div>
-
-      <div class="card" style="background:linear-gradient(135deg,#1A3A5C0a,#fff)">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🧠 Mental Performance Integration</div>
-        <div style="font-size:12px;color:#444;line-height:1.7">
-          Coach Shores is a <strong>Certified Mental Performance Trainer (CMPT)</strong>. Sharpshooter bakes mental performance into every workout — not as an add-on, but as part of the daily routine.<br><br>
-          Players check in on <strong>effort, adversity response, and emotional state</strong> after every session. Coaches see patterns. Players build self-awareness. That's the edge no other tracker gives you.
-        </div>
-      </div>
-
-      <div class="card" style="background:#0a0f1a;border:1px solid #334">
-        <div style="font-size:13px;font-weight:500;color:#FFD700;margin-bottom:8px">💰 Pricing — Early Access</div>
-        <div style="font-size:12px;color:#aaa;line-height:1.7;margin-bottom:10px">
-          You're using the <strong style="color:#FFD700">MVP version</strong> — free while we build and test with real teams.<br><br>
-          Sharpshooter will launch on the App Store and Google Play as a full native app. Pricing will be <strong style="color:#fff">$9.99/month per team</strong> — less than the cost of one tournament entry fee for a full season of data.
-        </div>
-        <div style="background:#1a2030;border-radius:8px;padding:10px 12px">
-          <div style="font-size:11px;color:#FFD700;font-weight:500;margin-bottom:4px">Coming in the full version:</div>
-          <div style="font-size:11px;color:#888;line-height:1.8">
-            📱 Native iOS & Android app<br>
-            🔔 Push notifications when the King changes<br>
-            📄 End-of-season PDF player reports<br>
-            ➕ Custom shooting categories<br>
-            🏫 District & multi-team pricing
-          </div>
-        </div>
-      </div>
-
-      <div class="card" style="border:1px solid #1A3A5C">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:6px">📲 How to Get Your Team Started</div>
-        <ol style="font-size:12px;color:#444;line-height:2;padding-left:18px;margin:0">
-          <li>Open <strong>basketball-tracker-nine.vercel.app</strong> on your phone</li>
-          <li>Add to your home screen (works like a native app)</li>
-          <li>Create your team — get a team code</li>
-          <li>Share the code with your players</li>
-          <li>Players join, set their PIN, and start tracking</li>
-        </ol>
-      </div>
-
-      <button data-action="share-coach" class="btn-primary" style="width:100%;padding:14px;font-size:14px;font-weight:500;margin-bottom:8px">
-        📤 Share with Another Coach
-      </button>
-
-    </div>`;
-
-  const playerContent = `
-    <div style="padding:4px 0">
-
-      <div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:12px;padding:20px 18px;margin-bottom:16px;text-align:center">
-        <div style="font-size:32px;margin-bottom:8px">🎯</div>
-        <div style="font-size:20px;font-weight:500;color:#FFD700;margin-bottom:6px">Sharpshooter</div>
-        <div style="font-size:12px;color:#ccc;font-style:italic">"What gets measured, improves"</div>
-      </div>
-
-      <div class="card" style="border-left:3px solid #FFD700">
-        <div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:8px">The best players track their work.</div>
-        <div style="font-size:13px;color:#444;line-height:1.7">
-          Sharpshooter is how your team tracks shooting workouts. Log your makes, compete for the crown, and get feedback from your coach — all in one place.
-        </div>
-      </div>
-
-      <div class="card">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:10px">📱 How It Works</div>
-        ${[
-          ["1️⃣","Join Your Team","Your coach gives you a team code. Type it in and you're on the roster."],
-          ["2️⃣","Set Your PIN","Pick a 4-digit PIN. Your data is yours — nobody else can change your numbers."],
-          ["3️⃣","Log Your Workout","Tap your name, pick the day, enter makes and attempts for each spot. Takes 2 minutes."],
-          ["4️⃣","Check the King Board","See who's leading the team in weighted shooting points. Can you take the crown?"],
-          ["5️⃣","Do Your Check-In","After saving your numbers, answer 3 quick questions about your mental game. Takes 30 seconds."],
-          ["6️⃣","See Your Summary","Track your progress week over week. See your best spot, your trend, and your coach's feedback."],
-        ].map(([num,title,desc]) => `
-          <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">
-            <div style="font-size:18px;min-width:28px">${num}</div>
-            <div>
-              <div style="font-size:13px;font-weight:500;color:#1A3A5C">${title}</div>
-              <div style="font-size:12px;color:#555;line-height:1.5;margin-top:2px">${desc}</div>
-            </div>
-          </div>`).join("")}
-      </div>
-
-      <div class="card" style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700">
-        <div style="font-size:13px;font-weight:500;color:#FFD700;margin-bottom:8px">👑 What is the Shooting King?</div>
-        <div style="font-size:12px;color:#aaa;line-height:1.7">
-          The Shooting King is the player with the most <strong style="color:#FFD700">weighted makes</strong> in a week. It's not just about volume — harder shots count more.<br><br>
-          Pull-up threes count <strong style="color:#FFD700">4x</strong> more than form shooting. Catch & shoot threes count <strong style="color:#FFD700">3x</strong>. Work on the hard stuff and you'll climb the board.
-        </div>
-      </div>
-
-      <div class="card" style="background:linear-gradient(135deg,#1A3A5C0a,#fff)">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">🧠 Why the Mental Check-In?</div>
-        <div style="font-size:12px;color:#444;line-height:1.7">
-          Your coach is a <strong>Certified Mental Performance Trainer</strong>. The check-in isn't just a survey — it's training your brain to process your workouts the right way.<br><br>
-          Players who track their mental game improve faster. That's not a guess — it's what the research shows.
-        </div>
-      </div>
-
-      <div class="card">
-        <div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px">💬 Coach Feedback</div>
-        <div style="font-size:12px;color:#444;line-height:1.7">
-          Your coach can leave you notes — general feedback, week feedback, or feedback on a specific day's workout. Check your <strong>Summary screen</strong> to see what they wrote. It's private — only you see it.
-        </div>
-      </div>
-
-    </div>`;
-
-  return `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-      <button data-action="go-home">← Back</button>
-      <span style="font-weight:500;font-size:15px">ℹ️ About Sharpshooter</span>
-    </div>
-    <div style="display:flex;gap:6px;margin-bottom:14px">
-      <button data-action="about-tab" data-t="coaches" class="${aboutTab==='coaches'?'btn-primary':''}" style="flex:1;padding:10px;font-size:13px;font-weight:500">🏀 For Coaches</button>
-      <button data-action="about-tab" data-t="players" class="${aboutTab==='players'?'btn-primary':''}" style="flex:1;padding:10px;font-size:13px;font-weight:500">👤 For Players</button>
-    </div>
-    ${aboutTab==='coaches' ? coachContent : playerContent}`;
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">'
+    +'<button data-action="go-home">← Back</button>'
+    +'<span style="font-weight:500;font-size:15px">ℹ️ About Sharpshooter</span></div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:14px">'
+    +'<button data-action="about-tab" data-t="coaches" class="'+(aboutTab==="coaches"?"btn-primary":"")+'" style="flex:1;padding:10px;font-size:13px;font-weight:500">🏀 For Coaches</button>'
+    +'<button data-action="about-tab" data-t="players" class="'+(aboutTab==="players"?"btn-primary":"")+'" style="flex:1;padding:10px;font-size:13px;font-weight:500">👤 For Players</button></div>'
+    +(aboutTab==="coaches"?coachContent:playerContent);
 }
-
 // ── Inline handlers ───────────────────────────
 async function handleJoin() {
   const code=(document.getElementById("join-code")?.value||"").trim().toUpperCase();
