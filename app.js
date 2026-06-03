@@ -1773,7 +1773,7 @@ async function refreshData() {
   if(screen==="leaderboard") render(buildLeaderboard());
   if(screen==="coach")       render(buildCoach());
   if(screen==="summary")     render(buildSummary());
-  if(screen==="player")      render(buildPlayer());
+  // Don't re-render player screen — user may be actively typing notes or shot numbers
 }
 
 // ── Boot ──────────────────────────────────────
