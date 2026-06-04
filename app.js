@@ -215,6 +215,7 @@ function getUnreadMessages(player) {
     return !allMessageReads.find(function(r){return r.message_id===m.id&&r.player===player;});
   });
 }
+function hasUnreadMessages(player){ return getUnreadMessages(player).length>0; }
 }
 
 async function saveCompete(val) {
