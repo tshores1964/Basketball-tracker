@@ -196,6 +196,7 @@ async function sendMessage(text, targetPlayer) {
   const {data,error}=await db.from("messages").insert(row).select().single();
   if(!error&&data) allMessages.unshift(data);
   return error;
+}
 async function markMessageRead(messageId, player) {
   const existing=allMessageReads.find(r=>r.message_id===messageId&&r.player===player);
   if(existing)return;
@@ -216,7 +217,6 @@ function getUnreadMessages(player) {
   });
 }
 function hasUnreadMessages(player){ return getUnreadMessages(player).length>0; }
-}
 
 async function saveCompete(val) {
   teamCompete = val;
