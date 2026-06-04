@@ -515,6 +515,50 @@ function showToast(msg){const t=document.createElement("div");t.className="toast
 function render(html){document.getElementById("app").innerHTML=html;}
 function h(str){return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
+function getYouTubeId(text) {
+  // Extract YouTube video ID from various URL formats
+  const patterns = [
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+  ];
+  for (var i=0;i<patterns.length;i++){
+    const m=text.match(patterns[i]);
+    if(m)return m[1];
+  }
+  return null;
+}
+
+function renderMessageText(text) {
+  // If message contains a YouTube link, show thumbnail + embed player
+  const ytId=getYouTubeId(text);
+  if(ytId){
+    // Strip the URL from the text to show just the accompanying message
+    const cleanText=text.replace(/https?:\/\/\S+/g,"").trim();
+    return (cleanText?'<div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:8px">'+h(cleanText)+'</div>':"")
+      +'<div data-action="play-video" data-vid="'+ytId+'" style="cursor:pointer;border-radius:10px;overflow:hidden;position:relative;background:#000">'
+      +'<img src="https://img.youtube.com/vi/'+ytId+'/hqdefault.jpg" style="width:100%;display:block;opacity:0.85" />'
+      +'<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,0.85);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center">'
+      +'<div style="width:0;height:0;border-top:12px solid transparent;border-bottom:12px solid transparent;border-left:20px solid #fff;margin-left:4px"></div></div>'
+      +'<div style="position:absolute;bottom:8px;left:10px;font-size:10px;color:#fff;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:4px">Tap to watch</div>'
+      +'</div>';
+  }
+  return '<div style="font-size:13px;color:#333;line-height:1.5">'+h(text)+'</div>';
+}
+
+function buildVideoPlayer(videoId) {
+  return '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.92);z-index:999;display:flex;flex-direction:column">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px">'
+    +'<div style="font-size:13px;color:#fff;font-weight:500">📺 Drill Video</div>'
+    +'<button data-action="close-video" style="font-size:14px;color:#FFD700;background:none;border:none;padding:6px 10px;cursor:pointer">✕ Close</button></div>'
+    +'<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:0 8px">'
+    +'<div style="width:100%;max-width:640px">'
+    +'<div style="position:relative;padding-bottom:56.25%;height:0">'
+    +'<iframe src="https://www.youtube.com/embed/'+videoId+'?autoplay=1&playsinline=1" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:8px" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>'
+    +'</div></div></div></div>';
+}
+
 // ══════════════════════════════════════════════
 //  SCREENS
 // ══════════════════════════════════════════════
@@ -883,7 +927,7 @@ function buildCoachMessages() {
         +'<div style="font-size:11px;color:'+readColor+';background:'+readBg+';padding:2px 8px;border-radius:10px">'+reads+"/"+total+' read</div>'
         +'<button data-action="delete-message" data-id="'+m.id+'" style="font-size:11px;color:#A32D2D;background:none;border:none;padding:2px 4px;cursor:pointer">X</button>'
         +'</div></div>'
-        +'<div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:6px">'+h(m.text)+'</div>'
+        +'<div style="margin-bottom:6px">'+renderMessageText(m.text)+'</div>'
         +unreadLine+'</div>';
     });
   }
@@ -933,7 +977,7 @@ function buildPlayer() {
   unread.forEach(function(m){
     msgBanners+='<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:10px;padding:12px 14px;margin-bottom:10px">'
       +'<div style="font-size:10px;color:#FFD700;text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:6px">Message from Coach</div>'
-      +'<div style="font-size:13px;color:#fff;line-height:1.5;margin-bottom:10px">'+h(m.text)+'</div>'
+      +'<div style="margin-bottom:10px">'+renderMessageText(m.text)+'</div>'
       +'<button data-action="dismiss-message" data-id="'+m.id+'" class="btn-primary" style="width:100%;padding:8px;font-size:12px;background:#FFD700;color:#1A3A5C;font-weight:500">Got it</button></div>';
   });
   var html='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
@@ -1073,9 +1117,9 @@ function buildCoachFeedback(playerName) {
   const dayLabels=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
   return '<div class="card" style="padding:16px;background:linear-gradient(135deg,#1A3A5C08,transparent);border-left:3px solid #1A3A5C;margin-bottom:8px">'
     +'<div style="font-size:12px;font-weight:500;color:#1A3A5C;margin-bottom:10px">Coach Feedback</div>'
-    +(playerCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">General</div><div style="font-size:13px;color:#333;line-height:1.5">'+h(playerCmnt.text)+'</div></div>':"")
-    +(weekCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">This Week</div><div style="font-size:13px;color:#333;line-height:1.5">'+h(weekCmnt.text)+'</div></div>':"")
-    +(recentDayCmnt?'<div><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">'+dayLabels[recentDayIdx]+'</div><div style="font-size:13px;color:#333;line-height:1.5">'+h(recentDayCmnt.text)+'</div></div>':"")
+    +(playerCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">General</div>'+renderMessageText(playerCmnt.text)+'</div>':"")
+    +(weekCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">This Week</div>'+renderMessageText(weekCmnt.text)+'</div>':"")
+    +(recentDayCmnt?'<div><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">'+dayLabels[recentDayIdx]+'</div>'+renderMessageText(recentDayCmnt.text)+'</div>':"")
     +'</div>';
 }
 
@@ -1404,6 +1448,7 @@ function buildLeaderboard() {
 }
 
 
+
 // ── About / Feature Explainer ────────────────
 function buildAbout() {
   const coachFeatures=[
@@ -1505,6 +1550,11 @@ function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allS
 
 // ── Event handling ────────────────────────────
 function attachEvents() {
+  // Body-level handler for video overlay (renders outside #app)
+  document.body.addEventListener("click",function(e){
+    const bv=e.target.closest("[data-action='close-video']");
+    if(bv){const overlay=bv.closest("div[style*='position:fixed']");if(overlay)overlay.remove();}
+  });
   document.getElementById("app").addEventListener("click", async e => {
     const b=e.target.closest("[data-action]");
     if(!b)return;
@@ -1524,6 +1574,13 @@ function attachEvents() {
     }
 
     if(a==="go-home"){screen="home";coachOpen=false;coachViewPlayer=null;render(buildHome());}
+    if(a==="play-video"){
+      document.body.insertAdjacentHTML("beforeend", buildVideoPlayer(b.dataset.vid));
+    }
+    if(a==="close-video"){
+      const el=document.querySelector("[data-action='close-video']");
+      if(el)el.closest("div[style*='position:fixed']").remove();
+    }
     if(a==="go-about"){screen="about";aboutTab="coaches";render(buildAbout());}
     if(a==="about-tab"){aboutTab=b.dataset.t;render(buildAbout());}
     if(a==="share-coach"){
