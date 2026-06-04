@@ -190,12 +190,12 @@ async function loadMessageReads() {
   if(error){console.error(error);return;} allMessageReads=data||[];
 }
 
-async function sendMessage(text) {
-  const {data,error}=await db.from("messages").insert({team_code:teamCode,text}).select().single();
+async function sendMessage(text, targetPlayer) {
+  const row={team_code:teamCode,text};
+  if(targetPlayer) row.target_player=targetPlayer;
+  const {data,error}=await db.from("messages").insert(row).select().single();
   if(!error&&data) allMessages.unshift(data);
   return error;
-}
-
 async function markMessageRead(messageId, player) {
   const existing=allMessageReads.find(r=>r.message_id===messageId&&r.player===player);
   if(existing)return;
@@ -210,11 +210,11 @@ async function deleteMessage(messageId) {
 }
 
 function getUnreadMessages(player) {
-  return allMessages.filter(m=>!allMessageReads.find(r=>r.message_id===m.id&&r.player===player));
+  return allMessages.filter(function(m){
+    if(m.target_player && m.target_player!==player) return false;
+    return !allMessageReads.find(function(r){return r.message_id===m.id&&r.player===player;});
+  });
 }
-
-function hasUnreadMessages(player) {
-  return getUnreadMessages(player).length > 0;
 }
 
 async function saveCompete(val) {
@@ -913,28 +913,35 @@ function buildCoachMessages() {
   } else {
     allMessages.forEach(function(m){
       const reads=allMessageReads.filter(function(r){return r.message_id===m.id;}).length;
-      const total=roster.length;
+      const target=m.target_player||"Everyone";
+      const total=m.target_player?1:roster.length;
       const diff=Date.now()-new Date(m.created_at).getTime();
       const mins=Math.floor(diff/60000),hrs=Math.floor(diff/3600000),days=Math.floor(diff/86400000);
       const timeAgo=days>0?days+"d ago":hrs>0?hrs+"h ago":mins>0?mins+"m ago":"Just now";
       const readColor=reads===total?"#27500A":"#856404",readBg=reads===total?"#E6F7EC":"#FFF9E6";
-      const unread=roster.filter(function(p){return !allMessageReads.find(function(r){return r.message_id===m.id&&r.player===p;});});
-      const unreadLine=unread.length>0?'<div style="font-size:10px;color:#888">Not yet read: '+unread.map(h).join(", ")+"</div>":'';
+      const unread=m.target_player?[]:roster.filter(function(p){return !allMessageReads.find(function(r){return r.message_id===m.id&&r.player===p;});});
+      const unreadLine=unread.length>0?'<div style="font-size:10px;color:#888;margin-top:4px">Not yet read: '+unread.map(h).join(", ")+'</div>':"";
       msgList+='<div style="padding:12px 14px;border:0.5px solid #e0e0e0;border-radius:10px;margin-bottom:8px;background:#fafafa">'
         +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'
-        +'<div style="font-size:12px;color:#888">'+timeAgo+'</div>'
+        +'<div><div style="font-size:12px;color:#888">'+timeAgo+'</div>'
+        +'<div style="font-size:10px;color:#1A3A5C;font-weight:500;margin-top:2px">To: '+h(target)+'</div></div>'
         +'<div style="display:flex;align-items:center;gap:6px">'
         +'<div style="font-size:11px;color:'+readColor+';background:'+readBg+';padding:2px 8px;border-radius:10px">'+reads+"/"+total+' read</div>'
         +'<button data-action="delete-message" data-id="'+m.id+'" style="font-size:11px;color:#A32D2D;background:none;border:none;padding:2px 4px;cursor:pointer">X</button>'
         +'</div></div>'
-        +'<div style="margin-bottom:6px">'+renderMessageText(m.text)+'</div>'
+        +'<div style="margin-bottom:4px">'+renderMessageText(m.text)+'</div>'
         +unreadLine+'</div>';
     });
   }
-  return '<div class="card"><h3>Send Team Message</h3>'
-    +'<p style="font-size:12px;color:#888;margin-bottom:10px">Players see this as a banner when they open the app.</p>'
-    +'<textarea id="msg-text" placeholder="e.g. Great practice today! Everyone needs to get their numbers in by Sunday night." style="width:100%;min-height:80px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;background:#fafafa;margin-bottom:10px"></textarea>'
-    +'<button data-action="send-message" class="btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:500">Send to All Players</button></div>'
+  const playerOpts='<option value="">Everyone</option>'
+    +roster.map(function(n){return'<option value="'+h(n)+'">'+h(n)+'</option>';}).join("");
+  return '<div class="card"><h3>Send Message</h3>'
+    +'<p style="font-size:12px;color:#888;margin-bottom:10px">Paste a YouTube link to send a video. Player sees it as a banner when they open the app.</p>'
+    +'<div style="margin-bottom:10px">'
+    +'<label style="font-size:12px;font-weight:500;color:#1A3A5C;display:block;margin-bottom:4px">Send to:</label>'
+    +'<select id="msg-target" style="width:100%;padding:9px 10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;background:#fafafa">'+playerOpts+'</select></div>'
+    +'<textarea id="msg-text" placeholder="Type a message or paste a YouTube link..." style="width:100%;min-height:80px;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;background:#fafafa;margin-bottom:10px"></textarea>'
+    +'<button data-action="send-message" class="btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:500">Send</button></div>'
     +'<div class="card"><h3>Sent Messages</h3>'+msgList+'</div>';
 }
 
@@ -1672,11 +1679,12 @@ function attachEvents() {
     if(a==="send-message"){
       if(b.disabled)return;
       const text=(document.getElementById("msg-text")?.value||"").trim();
+      const target=(document.getElementById("msg-target")?.value||"").trim();
       if(!text){showToast("Type a message first.");return;}
       b.disabled=true;b.textContent="Sending...";
-      const err=await sendMessage(text);
-      if(err){showToast("Error sending message.");b.disabled=false;b.textContent="📤 Send to All Players";return;}
-      showToast("✓ Message sent to all players!");
+      const err=await sendMessage(text,target||null);
+      if(err){showToast("Error sending message.");b.disabled=false;b.textContent="Send";return;}
+      showToast("Sent"+(target?" to "+target:"to everyone")+"!");
       render(buildCoach());
     }
     if(a==="delete-message"){
@@ -1828,9 +1836,8 @@ async function refreshData() {
   // Re-render current screen
   if(screen==="home")        render(buildHome());
   if(screen==="leaderboard") render(buildLeaderboard());
-  if(screen==="coach")       render(buildCoach());
+  // Don't re-render coach or player screens — user may be actively typing
   if(screen==="summary")     render(buildSummary());
-  // Don't re-render player screen — user may be actively typing notes or shot numbers
 }
 
 // ── Boot ──────────────────────────────────────
