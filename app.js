@@ -1763,7 +1763,11 @@ function attachEvents() {
       if(b.disabled)return;b.disabled=true;b.textContent="Saving...";
       const wk=weekKey(),inputs=document.querySelectorAll("[data-cat][data-si][data-di][data-f]"),bySpot={};
       inputs.forEach(inp=>{const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;if(!bySpot[key])bySpot[key]={};bySpot[key][inp.dataset.f]=inp.value;});
-      for(const key of Object.keys(bySpot)){const[cat,si,di]=key.split("|"),{m,a}=bySpot[key],mVal=parseInt(m),aVal=parseInt(a);if(!isNaN(mVal)&&!isNaN(aVal)&&m!==" "&&a!==" "&&m!==undefined&&a!==undefined)await saveShot(curPlayer,wk,cat,parseInt(si),parseInt(di),mVal,aVal);}
+      for(const key of Object.keys(bySpot)){const[cat,si,di]=key.split("|"),{m,a}=bySpot[key],mVal=parseInt(m),aVal=parseInt(a);if(!isNaN(mVal)&&!isNaN(aVal)&&m!==" "&&a!=="&&m!==undefined&&a!==undefined)shotsToSave.push({player:curPlayer,week:wk,category:cat,spot:parseInt(si),day:parseInt(di),made:mVal,attempts:aVal,team_code:teamCode});}
+      if(shotsToSave.length>0){
+        const{data:upserted,error}=await db.from("shots").upsert(shotsToSave,{onConflict:"player,week,category,spot,day,team_code"}).select();
+        if(error){console.error("Shot save error:",error);showToast("⚠️ Shots didn't save — check connection and try again");b.disabled=false;b.textContent="Save my numbers";return;}
+        if(upserted){upserted.forEach(s=>{const idx=allShots.findIndex(x=>x.player===s.player&&x.week===s.week&&x.category===s.category&&x.spot===s.spot&&x.day===s.day&&x.team_code===s.team_code);if(idx>=0)allShots[idx]=s;else allShots.push(s);});}
       const noteInputs=document.querySelectorAll("[data-note-day]");
       for(const ni of noteInputs){const day=parseInt(ni.dataset.noteDay),text=ni.value.trim();if(text!==getNote(curPlayer,wk,day))await saveNote(curPlayer,wk,day,text);}
       const labelInputs=document.querySelectorAll("[data-spot-label-cat]"),seenLabels=new Set();
