@@ -1763,7 +1763,7 @@ function attachEvents() {
       if(b.disabled)return;b.disabled=true;b.textContent="Saving...";const shotsToSave=[];
       const wk=weekKey(),inputs=document.querySelectorAll("[data-cat][data-si][data-di][data-f]"),bySpot={};
       inputs.forEach(inp=>{const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;if(!bySpot[key])bySpot[key]={};bySpot[key][inp.dataset.f]=inp.value;});
-      for(const key of Object.keys(bySpot)){const[cat,si,di]=key.split("|"),{m,a}=bySpot[key],mVal=parseInt(m),aVal=parseInt(a);if(!isNaN(mVal)&&!isNaN(aVal)&&m!==" "&&a!=="&&m!==undefined&&a!==undefined)shotsToSave.push({player:curPlayer,week:wk,category:cat,spot:parseInt(si),day:parseInt(di),made:mVal,attempts:aVal,team_code:teamCode});}
+      for(const key of Object.keys(bySpot)){const[cat,si,di]=key.split("|"),{m,a}=bySpot[key],mVal=parseInt(m),aVal=parseInt(a);if(!isNaN(mVal)&&!isNaN(aVal)&&m!==" "&&a!==""&&m!==undefined&&a!==undefined)shotsToSave.push({player:curPlayer,week:wk,category:cat,spot:parseInt(si),day:parseInt(di),made:mVal,attempts:aVal,team_code:teamCode});}
       if(shotsToSave.length>0){
         const{data:upserted,error}=await db.from("shots").upsert(shotsToSave,{onConflict:"player,week,category,spot,day,team_code"}).select();
         if(error){console.error("Shot save error:",error);showToast("⚠️ Shots didn't save — check connection and try again");b.disabled=false;b.textContent="Save my numbers";return;}
