@@ -91,6 +91,24 @@ function hasSeenOnboarding() { try{return localStorage.getItem("bball_seen_onboa
 function markOnboardingSeen() { try{localStorage.setItem("bball_seen_onboarding","yes");}catch(e){} }
 function clearTeam() { try{localStorage.removeItem("bball_team");}catch(e){} }
 
+// Fetch ALL rows for a team table, paging past Supabase's 1000-row response cap.
+// Without this, large tables (like shots) silently return only the first 1000 rows,
+// which made players' shots appear to "drop" after an auto-refresh.
+async function fetchAllTeamRows(table) {
+  if(!teamCode) return [];
+  const batch=1000;
+  let all=[],from=0;
+  while(true){
+    const {data,error}=await db.from(table).select("*").eq("team_code",teamCode).range(from,from+batch-1);
+    if(error){console.error("fetchAllTeamRows("+table+") error:",error);break;}
+    const rows=data||[];
+    all=all.concat(rows);
+    if(rows.length<batch) break;
+    from+=batch;
+  }
+  return all;
+}
+
 async function loadTeams() {
   const {data,error}=await db.from("teams").select("*").order("name");
   if(error){console.error(error);return;} teams=data||[];
@@ -105,13 +123,11 @@ async function loadRoster() {
 }
 async function loadShots() {
   if(!teamCode)return;
-  const {data,error}=await db.from("shots").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allShots=data||[];
+  allShots=await fetchAllTeamRows("shots");
 }
 async function loadNotes() {
   if(!teamCode)return;
-  const {data,error}=await db.from("notes").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allNotes=data||[];
+  allNotes=await fetchAllTeamRows("notes");
 }
 function getNote(player,week,day) {
   const n=allNotes.find(n=>n.player===player&&n.week===week&&n.day===day&&n.team_code===teamCode);
@@ -124,8 +140,7 @@ async function saveNote(player,week,day,text) {
 }
 async function loadSpotNames() {
   if(!teamCode)return;
-  const {data,error}=await db.from("spot_names").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allSpotNames=data||[];
+  allSpotNames=await fetchAllTeamRows("spot_names");
 }
 function getSpotLabel(player,cat,spot) {
   const sn=allSpotNames.find(s=>s.player===player&&s.category===cat&&s.spot===spot&&s.team_code===teamCode);
@@ -138,8 +153,7 @@ async function saveSpotLabel(player,cat,spot,label) {
 }
 async function loadSpotCounts() {
   if(!teamCode)return;
-  const {data,error}=await db.from("spot_counts").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allSpotCounts=data||[];
+  allSpotCounts=await fetchAllTeamRows("spot_counts");
 }
 function getSpotCount(player,cat) {
   const sc=allSpotCounts.find(s=>s.player===player&&s.category===cat&&s.team_code===teamCode);
@@ -166,8 +180,7 @@ async function savePlayerPin(player,pin) {
 }
 async function loadCoachComments() {
   if(!teamCode)return;
-  const {data,error}=await db.from("coach_comments").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allCoachComments=data||[];
+  allCoachComments=await fetchAllTeamRows("coach_comments");
 }
 async function loadMessages() {
   if(!teamCode)return;
@@ -176,8 +189,7 @@ async function loadMessages() {
 }
 async function loadMessageReads() {
   if(!teamCode)return;
-  const {data,error}=await db.from("message_reads").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allMessageReads=data||[];
+  allMessageReads=await fetchAllTeamRows("message_reads");
 }
 async function sendMessage(text, targetPlayer) {
   const row={team_code:teamCode,text};
@@ -262,8 +274,7 @@ async function saveCoachComment(player, type, week, day, text) {
 }
 async function loadDailyCheckins() {
   if(!teamCode)return;
-  const {data,error}=await db.from("daily_checkins").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allDailyCheckins=data||[];
+  allDailyCheckins=await fetchAllTeamRows("daily_checkins");
 }
 function getDailyCheckin(player,week,day) {
   return allDailyCheckins.find(c=>c.player===player&&c.week===week&&c.day===day&&c.team_code===teamCode);
@@ -275,8 +286,7 @@ async function saveDailyCheckin(player,week,day,effort,recovery,feeling) {
 }
 async function loadWeeklyCheckins() {
   if(!teamCode)return;
-  const {data,error}=await db.from("weekly_checkins").select("*").eq("team_code",teamCode);
-  if(error){console.error(error);return;} allWeeklyCheckins=data||[];
+  allWeeklyCheckins=await fetchAllTeamRows("weekly_checkins");
 }
 function getWeeklyCheckin(player,week) {
   return allWeeklyCheckins.find(c=>c.player===player&&c.week===week&&c.team_code===teamCode);
