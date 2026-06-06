@@ -457,6 +457,37 @@ function playerImproved(player) {
   if(prev.pct===null||curr.pct===null)return null;
   return{diff:curr.pct-prev.pct,curr:curr.pct,prev:prev.pct};
 }
+// ── Ranks, streaks & milestones ──────────────
+const RANK_LEVELS=[
+  {min:0,    name:"Rookie",       icon:"🌱", color:"#8a8a8a"},
+  {min:500,  name:"Marksman",     icon:"🎯", color:"#27500A"},
+  {min:1000, name:"Sharpshooter", icon:"🏀", color:"#2E75B6"},
+  {min:1500, name:"Sniper",       icon:"🔭", color:"#6A1B9A"},
+  {min:2000, name:"Deadeye",      icon:"⚡", color:"#C0392B"},
+  {min:2500, name:"Legend",       icon:"👑", color:"#B8860B"}
+];
+function getRank(points){var r=RANK_LEVELS[0];for(var i=0;i<RANK_LEVELS.length;i++){if(points>=RANK_LEVELS[i].min)r=RANK_LEVELS[i];}return r;}
+function nextRank(points){for(var i=0;i<RANK_LEVELS.length;i++){if(RANK_LEVELS[i].min>points)return RANK_LEVELS[i];}return null;}
+function ymd(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function dateFromWeekDay(week,dayIdx){const d=new Date(week+"T12:00:00");d.setDate(d.getDate()+dayIdx);return ymd(d);}
+function playerLogDates(player){const set={};allShots.forEach(function(s){if(s.player===player&&(s.attempts||0)>0){set[dateFromWeekDay(s.week,s.day)]=true;}});return set;}
+function playerCurrentStreak(player){const dates=playerLogDates(player);if(Object.keys(dates).length===0)return 0;var streak=0,cursor=new Date();cursor.setHours(12,0,0,0);if(!dates[ymd(cursor)])cursor.setDate(cursor.getDate()-1);while(dates[ymd(cursor)]){streak++;cursor.setDate(cursor.getDate()-1);}return streak;}
+function playerAllTimeKingPoints(player){const wks=[...new Set(allShots.filter(function(s){return s.player===player;}).map(function(s){return s.week;}))];if(wks.length===0)return 0;return Math.round(playerWeightedMakes(player,wks)*10)/10;}
+function playerImprovedBaseline(player){const wks=[...new Set(allShots.filter(function(s){return s.player===player;}).map(function(s){return s.week;}))].sort();if(wks.length<2)return null;const base=playerTotals(player,[wks[0]]),curr=playerTotals(player,[wks[wks.length-1]]);if(base.pct===null||curr.pct===null)return null;return{diff:curr.pct-base.pct,base:base.pct,curr:curr.pct};}
+function buildRankCard(player){
+  const pts=playerAllTimeKingPoints(player),rank=getRank(pts),next=nextRank(pts);
+  var progressHtml;
+  if(next){
+    const span=next.min-rank.min,into=pts-rank.min,pctTo=span>0?Math.max(0,Math.min(100,Math.round(into/span*100))):0,need=Math.round((next.min-pts)*10)/10;
+    progressHtml='<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-bottom:4px"><span>'+rank.icon+' '+rank.name+'</span><span>'+need+' pts to '+next.icon+' '+next.name+'</span></div><div style="height:9px;background:#eee;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pctTo+'%;background:'+rank.color+'"></div></div></div>';
+  } else {
+    progressHtml='<div style="margin-top:12px;font-size:12px;color:'+rank.color+';font-weight:500;text-align:center">🏆 Top rank reached — Legend status!</div>';
+  }
+  return '<div class="card" style="padding:14px 16px;background:linear-gradient(135deg,'+rank.color+'15,transparent);border:1px solid '+rank.color+'55">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:11px"><div style="font-size:30px">'+rank.icon+'</div><div><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500">My Rank</div><div style="font-size:19px;font-weight:500;color:'+rank.color+'">'+rank.name+'</div></div></div>'
+    +'<div style="text-align:right"><div style="font-size:22px;font-weight:500;color:'+rank.color+'">'+pts+'</div><div style="font-size:10px;color:#888">Total King Pts</div></div></div>'
+    +progressHtml+'</div>';
+}
 function weeksForPeriod(period) {
   const key=period==="week"?weekKey():period==="month"?monthKey():yearKey();
   const allWks=[...new Set(allShots.map(s=>s.week))];
@@ -831,8 +862,11 @@ function buildPlayer() {
   const tot=playerTotals(name,[wk]),playerCats=getPlayerCats(name),unread=getUnreadMessages(name);
   var msgBanners="";
   unread.forEach(function(m){msgBanners+='<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:10px;padding:12px 14px;margin-bottom:10px"><div style="font-size:10px;color:#FFD700;text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:6px">Message from Coach</div><div style="margin-bottom:10px">'+renderMessageText(m.text)+'</div><button data-action="dismiss-message" data-id="'+m.id+'" class="btn-primary" style="width:100%;padding:8px;font-size:12px;background:#FFD700;color:#1A3A5C;font-weight:500">Got it</button></div>';});
+  const pstreak=playerCurrentStreak(name);
+  const todayLogged=!!playerLogDates(name)[ymd(new Date())];
+  var streakBanner=pstreak>=2?'<div style="background:linear-gradient(135deg,#FFF3E0,#FFE0B2);border:1px solid #FFB74D;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:11px"><div style="font-size:24px">🔥</div><div><div style="font-size:14px;font-weight:500;color:#E65100">'+pstreak+'-day streak!</div><div style="font-size:11px;color:#BF6000">'+(todayLogged?"You logged today — nice work.":"Log today to keep it alive.")+'</div></div></div>':"";
   var html='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><button data-action="go-home">Back</button><div class="avatar avatar-lg">'+initials(name)+'</div><div style="flex:1"><div style="font-weight:500;font-size:15px">'+h(name)+'</div><div style="font-size:11px;color:#888">Week of '+fmtWeek(wk)+'</div></div><div style="text-align:right"><div style="font-size:20px;font-weight:500" class="'+pctClass(tot.pct)+'">'+(tot.pct===null?"--":tot.pct+"%")+'</div><div style="font-size:10px;color:#888">'+tot.m+"/"+tot.a+' shots</div></div></div>'
-    +msgBanners+'<div style="display:flex;gap:6px;margin-bottom:10px"><button data-action="go-summary" class="btn-primary" style="flex:1;padding:8px;font-size:12px">My Summary</button></div>';
+    +msgBanners+streakBanner+'<div style="display:flex;gap:6px;margin-bottom:10px"><button data-action="go-summary" class="btn-primary" style="flex:1;padding:8px;font-size:12px">My Summary</button></div>';
   if(isMobile){
     html+='<div style="display:flex;gap:4px;margin-bottom:10px;background:#fff;padding:6px;border-radius:10px;border:0.5px solid #e0e0e0;overflow-x:auto">';
     for(var di2=0;di2<7;di2++){
@@ -952,8 +986,11 @@ function buildSummary() {
   CATS.forEach(function(cat){const wkC=weekS.cats[cat]||{pct:null},moC=monthS.cats[cat]||{pct:null},yrC=yearS.cats[cat]||{pct:null};catRows+='<tr><td style="text-align:left;font-weight:500;font-size:11px">'+h(cat)+'</td><td class="'+pctClass(wkC.pct)+'">'+(wkC.pct===null?"--":wkC.pct+"%")+'</td><td class="'+pctClass(moC.pct)+'">'+(moC.pct===null?"--":moC.pct+"%")+'</td><td class="'+pctClass(yrC.pct)+'">'+(yrC.pct===null?"--":yrC.pct+"%")+'</td></tr>';});
   const trendHtml=trend!==null?'<div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:500;background:'+(trend>=0?'#E6F7EC':'#FDECEC')+';color:'+(trend>=0?'#27500A':'#A32D2D')+'">'+(trend>=0?"\u25B2":"\u25BC")+' '+Math.abs(trend)+'% vs last week</div>':"";
   const hasWeekly=getWeeklyCheckin(name,weekKey());
-  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button data-action="go-home">\u2190 Back</button><div class="avatar avatar-lg">'+initials(name)+'</div><div style="flex:1"><div style="font-weight:500;font-size:15px">'+h(name)+'</div><div style="font-size:11px;color:#888">Summary</div></div>'+trendHtml+'</div>'
+  const streak=playerCurrentStreak(name);
+  const streakHtml=streak>=2?'<div style="display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;font-size:11px;font-weight:500;background:#FFF3E0;color:#E65100;margin-left:6px">🔥 '+streak+'-day streak</div>':"";
+  return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap"><button data-action="go-home">\u2190 Back</button><div class="avatar avatar-lg">'+initials(name)+'</div><div style="flex:1"><div style="font-weight:500;font-size:15px">'+h(name)+'</div><div style="font-size:11px;color:#888">Summary</div></div>'+trendHtml+streakHtml+'</div>'
     +'<button data-action="go-weekly-checkin" class="btn-primary" style="width:100%;padding:11px;margin-bottom:12px;font-size:13px;font-weight:500">'+(hasWeekly?'Update':'Start')+' Weekly Check-In</button>'
+    +buildRankCard(name)
     +buildCoachFeedback(name)+buildProgressChart(name)
     +periodCard('This Week',weekS,'#1A3A5C')+periodCard('This Month',monthS,'#2E75B6')+periodCard('This Year',yearS,'#1E8449')
     +(bestSpot?'<div class="card" style="padding:14px 16px;background:linear-gradient(135deg,#FFF9E6,transparent);border:1px solid #FFD700"><div style="font-size:11px;color:#856404;letter-spacing:.5px;text-transform:uppercase;font-weight:500;margin-bottom:6px">Best Spot This Week</div><div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-weight:500;font-size:14px">'+h(bestSpot.label)+'</div><div style="font-size:11px;color:#888">'+h(bestSpot.cat)+'</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:500;color:#856404">'+bestSpot.pct+'%</div><div style="font-size:10px;color:#888">'+bestSpot.m+"/"+bestSpot.a+' shots</div></div></div></div>':'')
@@ -1005,18 +1042,22 @@ function buildLeaderboard() {
     const overall=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.pct,exact:t.exactPct,sub:t.m+"/"+t.a+" shots"};}));
     const attempts=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:t.m+" made"};}));
     const bestDay=ranked(roster.map(function(n){const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?b.day+" \u2014 "+b.m+"/"+b.a:""};}));
-    const improved=ranked(roster.map(function(n){const i=playerImproved(n);return{name:n,val:i?i.diff:null,sub:i?i.prev+"% \u2192 "+i.curr+"%":""};}));
+    const improved=ranked(roster.map(function(n){const i=playerImprovedBaseline(n);return{name:n,val:i?i.diff:null,sub:i?i.base+"% \u2192 "+i.curr+"%":""};}));
+    const ranks=roster.map(function(n){const pts=playerAllTimeKingPoints(n),rk=getRank(pts);return{name:n,val:pts,sub:rk.icon+" "+rk.name};}).filter(function(p){return p.val>0;}).sort(function(a,b){return b.val-a.val;});
+    const streaks=roster.map(function(n){const st=playerCurrentStreak(n);return{name:n,val:st,sub:st===1?"1 day":st+" days"};}).filter(function(p){return p.val>0;}).sort(function(a,b){return b.val-a.val;});
     const catRanks=CATS.map(function(cat){return{cat:cat,rows:ranked(roster.map(function(n){const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:c.m+"/"+c.a};}))};});
     function sbRows(rows,isAtt,isDiff,noMedals){isAtt=!!isAtt;isDiff=!!isDiff;noMedals=!!noMedals;if(!rows.length)return'<div class="sb-no-data">No data yet \u2014 get to work! \uD83C\uDFC0</div>';const max=rows[0].val||1;return rows.map(function(r,i){const barW=Math.round((r.val/max)*100),valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%",medalClass=(!noMedals&&i<3)?"medal-"+(i+1):"",rankCell=noMedals?'<div class="sb-rank other">'+(i+1)+'</div>':'<div class="sb-rank '+rankMedal(i)+'">'+rankSymbol(i)+'</div>';return'<div class="sb-row '+medalClass+'">'+rankCell+'<div class="sb-avatar">'+initials(r.name)+'</div><div class="sb-name">'+r.name+'</div><div class="sb-bar-wrap"><div class="sb-bar" style="width:'+barW+'%"></div></div><div><div class="sb-stat">'+valStr+'</div><div class="sb-sub">'+r.sub+'</div></div></div>';}).join("");}
     const periodTabs='<div class="sb-tabs"><div class="sb-tab '+(sbPeriod==="week"?"active":"")+'" data-action="sb-period" data-p="week">This Week</div><div class="sb-tab '+(sbPeriod==="month"?"active":"")+'" data-action="sb-period" data-p="month">This Month</div><div class="sb-tab '+(sbPeriod==="year"?"active":"")+'" data-action="sb-period" data-p="year">This Year</div></div>';
-    const sectionIds=["king","overall","attempts","bestday","improved","cats"],sectionLabels=["\uD83D\uDC51 King Points","Overall %","Most Shots","Best Day","Improved","By Category"];
+    const sectionIds=["king","ranks","streaks","overall","attempts","bestday","improved","cats"],sectionLabels=["\uD83D\uDC51 King Points","\uD83C\uDFC5 Ranks","\uD83D\uDD25 Streaks","Overall %","Most Shots","Best Day","Improved","By Category"];
     const sectionTabs='<div class="sb-tabs">'+sectionIds.map(function(id,i){return'<div class="sb-tab '+(sbSection===id?"active":"")+'" data-action="sb-sec" data-s="'+id+'">'+sectionLabels[i]+'</div>';}).join("")+'</div>';
     let content="";
     if(sbSection==="king")     content='<div class="sb-section"><div class="sb-section-title">\uD83D\uDC51 King Points \u2014 weighted makes</div>'+sbRows(kingPoints,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Harder shots are worth more. Put up volume on tough shots to climb.</div></div>';
+    if(sbSection==="ranks")    content='<div class="sb-section"><div class="sb-section-title">\uD83C\uDFC5 Player Ranks \u2014 all-time King Points</div>'+sbRows(ranks,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">\uD83C\uDF31 Rookie \u2192 \uD83C\uDFAF Marksman (500) \u2192 \uD83C\uDFC0 Sharpshooter (1,000) \u2192 \uD83D\uDD2D Sniper (1,500) \u2192 \u26A1 Deadeye (2,000) \u2192 \uD83D\uDC51 Legend (2,500)</div></div>';
+    if(sbSection==="streaks")  content='<div class="sb-section"><div class="sb-section-title">\uD83D\uDD25 Current logging streaks</div>'+sbRows(streaks,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Consecutive days with shots logged. Show up every day to climb.</div></div>';
     if(sbSection==="overall")  content='<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>'+sbRows(overall,false,false,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Accuracy only \u2014 not ranked for the crown. Volume on hard shots wins King Points.</div></div>';
     if(sbSection==="attempts") content='<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>'+sbRows(attempts,true)+'</div>';
     if(sbSection==="bestday")  content='<div class="sb-section"><div class="sb-section-title">Best single day</div>'+sbRows(bestDay)+'</div>';
-    if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (week over week)</div>'+sbRows(improved,false,true)+'</div>';
+    if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (season \u2014 vs first week)</div>'+sbRows(improved,false,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Growth from your very first week to your latest \u2014 your own baseline, not anyone else\'s.</div></div>';
     if(sbSection==="cats")     content=catRanks.map(function(cr){return'<div class="sb-section"><div class="sb-section-title">'+cr.cat+'</div>'+sbRows(cr.rows)+'</div>';}).join("");
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><button data-action="go-home">\u2190 Back</button><span style="font-weight:500;font-size:15px">\uD83C\uDFC6 '+teamName+' Rankings</span></div>'+kingBanner+'<div class="sb-wrap"><div class="sb-title">\uD83C\uDFC0 Team Rankings</div>'+periodTabs+'<div class="period-label">'+periodLabel+'</div>'+sectionTabs+content+'</div>';
   } catch(e) {
@@ -1104,6 +1145,7 @@ function attachEvents() {
 
     if(a==="save-player"){
       if(b.disabled)return;b.disabled=true;b.textContent="Saving...";
+      const oldRank=getRank(playerAllTimeKingPoints(curPlayer));
       const wk=weekKey(),inputs=document.querySelectorAll("[data-cat][data-si][data-di][data-f]"),bySpot={};
       inputs.forEach(inp=>{const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;if(!bySpot[key])bySpot[key]={};bySpot[key][inp.dataset.f]=inp.value;});
       const shotsToSave=[];
@@ -1117,7 +1159,7 @@ function attachEvents() {
       for(const ni of noteInputs){const day=parseInt(ni.dataset.noteDay),text=ni.value.trim();if(text!==getNote(curPlayer,wk,day))await saveNote(curPlayer,wk,day,text);}
       const labelInputs=document.querySelectorAll("[data-spot-label-cat]"),seenLabels=new Set();
       for(const li of labelInputs){const cat=li.dataset.spotLabelCat,si=parseInt(li.dataset.spotLabelSi),key=`${cat}|${si}`;if(seenLabels.has(key))continue;seenLabels.add(key);const label=li.value.trim();if(label!==getSpotLabel(curPlayer,cat,si))await saveSpotLabel(curPlayer,cat,si,label);}
-      localEdits={};showToast("✓ Numbers saved!");screen="daily-checkin";checkinTemp={};render(buildDailyCheckin());
+      localEdits={};const newRank=getRank(playerAllTimeKingPoints(curPlayer));if(newRank.min>oldRank.min){showToast("🎉 New rank: "+newRank.icon+" "+newRank.name+"!");}else{showToast("✓ Numbers saved!");}screen="daily-checkin";checkinTemp={};render(buildDailyCheckin());
     }
 
     if(a==="sb-period"){sbPeriod=b.dataset.p;render(buildLeaderboard());}
