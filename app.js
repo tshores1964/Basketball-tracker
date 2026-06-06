@@ -472,20 +472,20 @@ function ymd(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"
 function dateFromWeekDay(week,dayIdx){const d=new Date(week+"T12:00:00");d.setDate(d.getDate()+dayIdx);return ymd(d);}
 function playerLogDates(player){const set={};allShots.forEach(function(s){if(s.player===player&&(s.attempts||0)>0){set[dateFromWeekDay(s.week,s.day)]=true;}});return set;}
 function playerCurrentStreak(player){const dates=playerLogDates(player);if(Object.keys(dates).length===0)return 0;var streak=0,cursor=new Date();cursor.setHours(12,0,0,0);if(!dates[ymd(cursor)])cursor.setDate(cursor.getDate()-1);while(dates[ymd(cursor)]){streak++;cursor.setDate(cursor.getDate()-1);}return streak;}
-function playerAllTimeKingPoints(player){const wks=[...new Set(allShots.filter(function(s){return s.player===player;}).map(function(s){return s.week;}))];if(wks.length===0)return 0;return Math.round(playerWeightedMakes(player,wks)*10)/10;}
+function playerRankPoints(player){return Math.round(playerWeightedMakes(player,[weekKey()])*10)/10;}
 function playerImprovedBaseline(player){const wks=[...new Set(allShots.filter(function(s){return s.player===player;}).map(function(s){return s.week;}))].sort();if(wks.length<2)return null;const base=playerTotals(player,[wks[0]]),curr=playerTotals(player,[wks[wks.length-1]]);if(base.pct===null||curr.pct===null)return null;return{diff:curr.pct-base.pct,base:base.pct,curr:curr.pct};}
 function buildRankCard(player){
-  const pts=playerAllTimeKingPoints(player),rank=getRank(pts),next=nextRank(pts);
+  const pts=playerRankPoints(player),rank=getRank(pts),next=nextRank(pts);
   var progressHtml;
   if(next){
     const span=next.min-rank.min,into=pts-rank.min,pctTo=span>0?Math.max(0,Math.min(100,Math.round(into/span*100))):0,need=Math.round((next.min-pts)*10)/10;
     progressHtml='<div style="margin-top:12px"><div style="display:flex;justify-content:space-between;font-size:10px;color:#888;margin-bottom:4px"><span>'+rank.icon+' '+rank.name+'</span><span>'+need+' pts to '+next.icon+' '+next.name+'</span></div><div style="height:9px;background:#eee;border-radius:5px;overflow:hidden"><div style="height:100%;width:'+pctTo+'%;background:'+rank.color+'"></div></div></div>';
   } else {
-    progressHtml='<div style="margin-top:12px;font-size:12px;color:'+rank.color+';font-weight:500;text-align:center">🏆 Top rank reached — Legend status!</div>';
+    progressHtml='<div style="margin-top:12px;font-size:12px;color:'+rank.color+';font-weight:500;text-align:center">🏆 Legend this week — top rank!</div>';
   }
   return '<div class="card" style="padding:14px 16px;background:linear-gradient(135deg,'+rank.color+'15,transparent);border:1px solid '+rank.color+'55">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:11px"><div style="font-size:30px">'+rank.icon+'</div><div><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500">My Rank</div><div style="font-size:19px;font-weight:500;color:'+rank.color+'">'+rank.name+'</div></div></div>'
-    +'<div style="text-align:right"><div style="font-size:22px;font-weight:500;color:'+rank.color+'">'+pts+'</div><div style="font-size:10px;color:#888">Total King Pts</div></div></div>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:11px"><div style="font-size:30px">'+rank.icon+'</div><div><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500">My Rank This Week</div><div style="font-size:19px;font-weight:500;color:'+rank.color+'">'+rank.name+'</div></div></div>'
+    +'<div style="text-align:right"><div style="font-size:22px;font-weight:500;color:'+rank.color+'">'+pts+'</div><div style="font-size:10px;color:#888">King Pts this week</div></div></div>'
     +progressHtml+'</div>';
 }
 function weeksForPeriod(period) {
@@ -1043,7 +1043,7 @@ function buildLeaderboard() {
     const attempts=ranked(roster.map(function(n){const t=playerTotals(n,weeks);return{name:n,val:t.a,sub:t.m+" made"};}));
     const bestDay=ranked(roster.map(function(n){const b=playerBestDay(n,weeks);return{name:n,val:b?b.pct:null,sub:b?b.day+" \u2014 "+b.m+"/"+b.a:""};}));
     const improved=ranked(roster.map(function(n){const i=playerImprovedBaseline(n);return{name:n,val:i?i.diff:null,sub:i?i.base+"% \u2192 "+i.curr+"%":""};}));
-    const ranks=roster.map(function(n){const pts=playerAllTimeKingPoints(n),rk=getRank(pts);return{name:n,val:pts,sub:rk.icon+" "+rk.name};}).filter(function(p){return p.val>0;}).sort(function(a,b){return b.val-a.val;});
+    const ranks=roster.map(function(n){const pts=playerRankPoints(n),rk=getRank(pts);return{name:n,val:pts,sub:rk.icon+" "+rk.name};}).filter(function(p){return p.val>0;}).sort(function(a,b){return b.val-a.val;});
     const streaks=roster.map(function(n){const st=playerCurrentStreak(n);return{name:n,val:st,sub:st===1?"1 day":st+" days"};}).filter(function(p){return p.val>0;}).sort(function(a,b){return b.val-a.val;});
     const catRanks=CATS.map(function(cat){return{cat:cat,rows:ranked(roster.map(function(n){const c=playerCatTotals(n,weeks)[cat];return{name:n,val:c.pct,sub:c.m+"/"+c.a};}))};});
     function sbRows(rows,isAtt,isDiff,noMedals){isAtt=!!isAtt;isDiff=!!isDiff;noMedals=!!noMedals;if(!rows.length)return'<div class="sb-no-data">No data yet \u2014 get to work! \uD83C\uDFC0</div>';const max=rows[0].val||1;return rows.map(function(r,i){const barW=Math.round((r.val/max)*100),valStr=isDiff?(r.val>0?"+":"")+r.val+"%":isAtt?String(r.val):r.val+"%",medalClass=(!noMedals&&i<3)?"medal-"+(i+1):"",rankCell=noMedals?'<div class="sb-rank other">'+(i+1)+'</div>':'<div class="sb-rank '+rankMedal(i)+'">'+rankSymbol(i)+'</div>';return'<div class="sb-row '+medalClass+'">'+rankCell+'<div class="sb-avatar">'+initials(r.name)+'</div><div class="sb-name">'+r.name+'</div><div class="sb-bar-wrap"><div class="sb-bar" style="width:'+barW+'%"></div></div><div><div class="sb-stat">'+valStr+'</div><div class="sb-sub">'+r.sub+'</div></div></div>';}).join("");}
@@ -1052,7 +1052,7 @@ function buildLeaderboard() {
     const sectionTabs='<div class="sb-tabs">'+sectionIds.map(function(id,i){return'<div class="sb-tab '+(sbSection===id?"active":"")+'" data-action="sb-sec" data-s="'+id+'">'+sectionLabels[i]+'</div>';}).join("")+'</div>';
     let content="";
     if(sbSection==="king")     content='<div class="sb-section"><div class="sb-section-title">\uD83D\uDC51 King Points \u2014 weighted makes</div>'+sbRows(kingPoints,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Harder shots are worth more. Put up volume on tough shots to climb.</div></div>';
-    if(sbSection==="ranks")    content='<div class="sb-section"><div class="sb-section-title">\uD83C\uDFC5 Player Ranks \u2014 all-time King Points</div>'+sbRows(ranks,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">\uD83C\uDF31 Rookie \u2192 \uD83C\uDFAF Marksman (500) \u2192 \uD83C\uDFC0 Sharpshooter (1,000) \u2192 \uD83D\uDD2D Sniper (1,500) \u2192 \u26A1 Deadeye (2,000) \u2192 \uD83D\uDC51 Legend (2,500)</div></div>';
+    if(sbSection==="ranks")    content='<div class="sb-section"><div class="sb-section-title">\uD83C\uDFC5 Player Ranks \u2014 this week\'s King Points</div>'+sbRows(ranks,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Resets every week \u2014 earn your rank again. \uD83C\uDF31 Rookie \u2192 \uD83C\uDFAF Marksman (500) \u2192 \uD83C\uDFC0 Sharpshooter (1,000) \u2192 \uD83D\uDD2D Sniper (1,500) \u2192 \u26A1 Deadeye (2,000) \u2192 \uD83D\uDC51 Legend (2,500)</div></div>';
     if(sbSection==="streaks")  content='<div class="sb-section"><div class="sb-section-title">\uD83D\uDD25 Current logging streaks</div>'+sbRows(streaks,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Consecutive days with shots logged. Show up every day to climb.</div></div>';
     if(sbSection==="overall")  content='<div class="sb-section"><div class="sb-section-title">Overall shooting %</div>'+sbRows(overall,false,false,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Accuracy only \u2014 not ranked for the crown. Volume on hard shots wins King Points.</div></div>';
     if(sbSection==="attempts") content='<div class="sb-section"><div class="sb-section-title">Most shots attempted</div>'+sbRows(attempts,true)+'</div>';
@@ -1145,7 +1145,7 @@ function attachEvents() {
 
     if(a==="save-player"){
       if(b.disabled)return;b.disabled=true;b.textContent="Saving...";
-      const oldRank=getRank(playerAllTimeKingPoints(curPlayer));
+      const oldRank=getRank(playerRankPoints(curPlayer));
       const wk=weekKey(),inputs=document.querySelectorAll("[data-cat][data-si][data-di][data-f]"),bySpot={};
       inputs.forEach(inp=>{const key=`${inp.dataset.cat}|${inp.dataset.si}|${inp.dataset.di}`;if(!bySpot[key])bySpot[key]={};bySpot[key][inp.dataset.f]=inp.value;});
       const shotsToSave=[];
@@ -1159,7 +1159,7 @@ function attachEvents() {
       for(const ni of noteInputs){const day=parseInt(ni.dataset.noteDay),text=ni.value.trim();if(text!==getNote(curPlayer,wk,day))await saveNote(curPlayer,wk,day,text);}
       const labelInputs=document.querySelectorAll("[data-spot-label-cat]"),seenLabels=new Set();
       for(const li of labelInputs){const cat=li.dataset.spotLabelCat,si=parseInt(li.dataset.spotLabelSi),key=`${cat}|${si}`;if(seenLabels.has(key))continue;seenLabels.add(key);const label=li.value.trim();if(label!==getSpotLabel(curPlayer,cat,si))await saveSpotLabel(curPlayer,cat,si,label);}
-      localEdits={};const newRank=getRank(playerAllTimeKingPoints(curPlayer));if(newRank.min>oldRank.min){showToast("🎉 New rank: "+newRank.icon+" "+newRank.name+"!");}else{showToast("✓ Numbers saved!");}screen="daily-checkin";checkinTemp={};render(buildDailyCheckin());
+      localEdits={};const newRank=getRank(playerRankPoints(curPlayer));if(newRank.min>oldRank.min){showToast("🎉 New rank: "+newRank.icon+" "+newRank.name+"!");}else{showToast("✓ Numbers saved!");}screen="daily-checkin";checkinTemp={};render(buildDailyCheckin());
     }
 
     if(a==="sb-period"){sbPeriod=b.dataset.p;render(buildLeaderboard());}
