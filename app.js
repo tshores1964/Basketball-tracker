@@ -5,19 +5,25 @@
 const DEFAULT_CATS = ["Form Shooting","Catch & Shoot","Catch & Shoot 3s","1-Dribble Pull-Up","1-Dribble Pull-Up 3s","Finishes"];
 const DEFAULT_WEIGHTS = {"Form Shooting":0.5,"Catch & Shoot":1.0,"Catch & Shoot 3s":3.0,"1-Dribble Pull-Up":2.0,"1-Dribble Pull-Up 3s":4.0,"Finishes":1.0};
 let CATS = [...DEFAULT_CATS];
-const DAYS    = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const DAYS    = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const N_SPOTS = 5;
 
 // ── Date helpers ─────────────────────────────
 function weekKey() {
   const d = new Date();
-  const day = d.getDay();
-  const diff = (day === 0) ? -6 : 1 - day;
-  const mon = new Date(d);
-  mon.setDate(d.getDate() + diff);
-  const y = mon.getFullYear();
-  const m = String(mon.getMonth()+1).padStart(2,"0");
-  const dd = String(mon.getDate()).padStart(2,"0");
+  const sun = new Date(d);
+  sun.setDate(d.getDate() - d.getDay());
+  const y = sun.getFullYear();
+  const m = String(sun.getMonth()+1).padStart(2,"0");
+  const dd = String(sun.getDate()).padStart(2,"0");
+  return y+"-"+m+"-"+dd;
+}
+function weekKeyOffset(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - d.getDay() + n*7);
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const dd = String(d.getDate()).padStart(2,"0");
   return y+"-"+m+"-"+dd;
 }
 function monthKey() { return new Date().toISOString().slice(0, 7); }
@@ -51,9 +57,10 @@ let pinErr      = "";
 let pinMode     = "coach";
 let pinSetupFirst = "";
 let sbPeriod    = "week";
+let sbWeekOffset = 0;
 let sbSection   = "king";
 let localEdits  = {};
-let selectedDay = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+let selectedDay = new Date().getDay();
 let allNotes = [];
 let allSpotNames = [];
 let allSpotCounts = [];
@@ -789,7 +796,7 @@ function buildRoster() {
 function buildCoachPlayerView() {
   const name=coachViewPlayer,wk=weekKey(),tot=playerTotals(name,[wk]);
   const playerCmnt=getCoachComment(name,"player",null,null),weekCmnt=getCoachComment(name,"week",wk,null),dayCmnt=getCoachComment(name,"day",wk,coachCommentDay);
-  const dayLabels=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const dayLabels=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   var dayBtns="";
   DAYS.forEach(function(d,di){dayBtns+='<button onclick="coachSelectDay('+di+')" style="flex:1;min-width:38px;padding:7px 4px;border:none;border-radius:6px;font-size:11px;font-weight:500;background:'+(coachCommentDay===di?'#1A3A5C':'#f0f0f0')+';color:'+(coachCommentDay===di?'#fff':'#444')+';cursor:pointer">'+d+'</button>';});
   return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><button data-action="coach-back-roster" style="font-size:12px">Back to Roster</button><div class="avatar avatar-lg">'+initials(name)+'</div><div style="flex:1"><div style="font-weight:500;font-size:15px">'+h(name)+'</div><div style="font-size:11px;color:#888">This week: '+(tot.pct===null?"no data":tot.pct+"% ("+tot.m+"/"+tot.a+")")+'</div></div></div>'
@@ -876,7 +883,7 @@ function buildPlayer() {
       html+='<button onclick="selectDay('+di2+')" style="flex:1;min-width:42px;padding:8px 4px;border:none;border-radius:7px;font-size:11px;font-weight:500;background:'+(isToday?"#1A3A5C":hasData?"#E6F1FB":"transparent")+';color:'+(isToday?"#fff":hasData?"#0C447C":"#888")+';cursor:pointer"><div>'+DAYS[di2]+'</div>'+(hasData?'<div style="font-size:9px;margin-top:2px;opacity:.8">'+dm+"/"+da+'</div>':'')+'</button>';
     }
     html+='</div>';
-    const dayLabel=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay];
+    const dayLabel=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][selectedDay];
     html+='<div style="font-size:13px;font-weight:500;color:#1A3A5C;margin-bottom:8px;text-align:center">'+dayLabel+"s Workout</div>";
     const noteText=getNote(name,wk,selectedDay);
     html+='<div class="card" style="padding:.75rem 1rem;margin-bottom:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:12px;font-weight:500;color:#1A3A5C">'+dayLabel+' Notes</div><div style="font-size:10px;color:#888">How did it feel?</div></div><textarea data-note-day="'+selectedDay+'" placeholder="Quick thoughts..." style="width:100%;min-height:60px;padding:8px 10px;border:1px solid #ccc;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;background:#fafafa">'+h(noteText)+'</textarea></div>';
@@ -944,7 +951,7 @@ function buildCoachFeedback(playerName) {
   var recentDayCmnt=null,recentDayIdx=null;
   for(var d=6;d>=0;d--){const c=getCoachComment(playerName,"day",wk,d);if(c&&c.text){recentDayCmnt=c;recentDayIdx=d;break;}}
   if(!playerCmnt&&!weekCmnt&&!recentDayCmnt) return "";
-  const dayLabels=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const dayLabels=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   return '<div class="card" style="padding:16px;background:linear-gradient(135deg,#1A3A5C08,transparent);border-left:3px solid #1A3A5C;margin-bottom:8px"><div style="font-size:12px;font-weight:500;color:#1A3A5C;margin-bottom:10px">Coach Feedback</div>'
     +(playerCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">General</div>'+renderMessageText(playerCmnt.text)+'</div>':"")
     +(weekCmnt?'<div style="margin-bottom:10px"><div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.5px;font-weight:500;margin-bottom:4px">This Week</div>'+renderMessageText(weekCmnt.text)+'</div>':"")
@@ -952,7 +959,7 @@ function buildCoachFeedback(playerName) {
     +'</div>';
 }
 function buildDailyCheckin() {
-  const name=curPlayer,wk=weekKey(),dayLabel=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][selectedDay],ex=getDailyCheckin(name,wk,selectedDay)||{};
+  const name=curPlayer,wk=weekKey(),dayLabel=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][selectedDay],ex=getDailyCheckin(name,wk,selectedDay)||{};
   function btn(field,val,label){const sel=checkinTemp[field]!==undefined?checkinTemp[field]:ex[field];return'<button data-checkin="'+field+'" data-val="'+h(val)+'" class="'+(sel===val?"btn-primary":"")+'" style="padding:11px;font-size:13px;font-weight:500">'+label+'</button>';}
   return '<div style="max-width:520px;margin:0 auto"><div style="text-align:center;margin-bottom:18px"><div style="font-size:11px;color:#888;letter-spacing:1px;text-transform:uppercase;font-weight:500">Daily Check-In</div><div style="font-size:13px;color:#1A3A5C;margin-top:4px">'+dayLabel+' - '+h(name)+'</div></div>'
     +'<div class="card" style="padding:18px 16px;margin-bottom:12px"><div style="font-size:14px;font-weight:500;color:#1A3A5C;margin-bottom:12px">Did you bring your best effort today?</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+btn("effort","Yes","Yes")+btn("effort","No","No")+'</div></div>'
@@ -1027,13 +1034,14 @@ async function buildLeague() {
 }
 function buildLeaderboard() {
   try {
-    const weeks=weeksForPeriod(sbPeriod),wk=weekKey(),mo=monthKey(),yr=yearKey();
-    const periodLabel=sbPeriod==="week"?"Week of "+fmtWeek(wk):sbPeriod==="month"?fmtMonth(mo):yr+" Season";
-    const kingWeeks=[weekKey()];
+    const offset=(sbPeriod==="week")?sbWeekOffset:0,viewWeek=weekKeyOffset(offset);
+    const weeks=sbPeriod==="week"?[viewWeek]:weeksForPeriod(sbPeriod),wk=viewWeek,mo=monthKey(),yr=yearKey();
+    const periodLabel=sbPeriod==="week"?"Week of "+fmtWeek(viewWeek):sbPeriod==="month"?fmtMonth(mo):yr+" Season";
+    const kingWeeks=[viewWeek];
     const kingData=roster.map(function(n){const t=playerTotals(n,kingWeeks),wMade=playerWeightedMakes(n,kingWeeks);return{name:n,made:t.m,weighted:wMade,pct:t.pct};}).filter(function(p){return p.weighted>0;}).sort(function(a,b){return b.weighted-a.weighted;});
     const king=kingData[0]||null;
     let streak=0;
-    if(king){try{const currentWk=weekKey(),pastWks=[...new Set(allShots.map(function(s){return s.week;}))].filter(function(w){return w<currentWk;}).sort().reverse().slice(0,10);for(let wi=0;wi<pastWks.length;wi++){const wkData=roster.map(function(n){return{name:n,w:playerWeightedMakes(n,[pastWks[wi]])};}).filter(function(p){return p.w>0;}).sort(function(a,b){return b.w-a.w;});if(wkData[0]&&wkData[0].name===king.name)streak++;else break;}}catch(e2){streak=0;}}
+    if(king){try{const currentWk=viewWeek,pastWks=[...new Set(allShots.map(function(s){return s.week;}))].filter(function(w){return w<currentWk;}).sort().reverse().slice(0,10);for(let wi=0;wi<pastWks.length;wi++){const wkData=roster.map(function(n){return{name:n,w:playerWeightedMakes(n,[pastWks[wi]])};}).filter(function(p){return p.w>0;}).sort(function(a,b){return b.w-a.w;});if(wkData[0]&&wkData[0].name===king.name)streak++;else break;}}catch(e2){streak=0;}}
     let kingBanner;
     if(king){const streakLine=streak>=2?'<div style="margin-top:8px;font-size:11px;color:#FFD700">🔥 '+streak+' weeks in a row!</div>':"",kingPct=king.pct===null?"—":king.pct+"%";kingBanner='<div style="background:linear-gradient(135deg,#2a1a00,#1a0f00);border:1.5px solid #FFD700;border-radius:12px;padding:14px 16px;margin-bottom:14px;text-align:center"><div style="font-size:10px;letter-spacing:1px;color:#FFD700;text-transform:uppercase;margin-bottom:6px">👑 This Week\'s Shooting King</div><div style="font-size:26px;font-weight:500;color:#FFD700;margin-bottom:4px">'+king.name+'</div><div style="display:flex;justify-content:center;gap:16px;margin-top:6px;flex-wrap:wrap"><div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+Math.round(king.weighted*10)/10+'</div><div style="font-size:10px;color:#888">King Points</div></div><div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+king.made+'</div><div style="font-size:10px;color:#888">Shots Made</div></div><div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#fff">'+kingPct+'</div><div style="font-size:10px;color:#888">Shooting %</div></div><div style="text-align:center"><div style="font-size:18px;font-weight:500;color:#FFD700">'+streak+'</div><div style="font-size:10px;color:#888">Week Streak</div></div></div>'+streakLine+'</div>';}
     else{kingBanner='<div style="background:#111;border:1px dashed #334;border-radius:12px;padding:14px;text-align:center;margin-bottom:14px"><div style="font-size:12px;color:#445">👑 No Shooting King yet this week — get to work!</div></div>';}
@@ -1059,7 +1067,8 @@ function buildLeaderboard() {
     if(sbSection==="bestday")  content='<div class="sb-section"><div class="sb-section-title">Best single day</div>'+sbRows(bestDay)+'</div>';
     if(sbSection==="improved") content='<div class="sb-section"><div class="sb-section-title">Most improved (season \u2014 vs first week)</div>'+sbRows(improved,false,true)+'<div style="font-size:10px;color:#888;margin-top:8px;text-align:center;font-style:italic">Growth from your very first week to your latest \u2014 your own baseline, not anyone else\'s.</div></div>';
     if(sbSection==="cats")     content=catRanks.map(function(cr){return'<div class="sb-section"><div class="sb-section-title">'+cr.cat+'</div>'+sbRows(cr.rows)+'</div>';}).join("");
-    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><button data-action="go-home">\u2190 Back</button><span style="font-weight:500;font-size:15px">\uD83C\uDFC6 '+teamName+' Rankings</span></div>'+kingBanner+'<div class="sb-wrap"><div class="sb-title">\uD83C\uDFC0 Team Rankings</div>'+periodTabs+'<div class="period-label">'+periodLabel+'</div>'+sectionTabs+content+'</div>';
+    const weekNav='<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:8px 0"><button data-action="sb-week-prev" style="padding:6px 12px;font-size:13px;border-radius:7px">\u25C0 Prev</button><div style="min-width:140px;text-align:center"><div style="font-size:12px;color:#1A3A5C;font-weight:500">'+(offset===0?"This Week":offset===-1?"Last Week":Math.abs(offset)+" weeks ago")+'</div><div style="font-size:11px;color:#888">'+fmtWeek(viewWeek)+'</div></div><button data-action="sb-week-next" '+(offset===0?'disabled style="padding:6px 12px;font-size:13px;border-radius:7px;opacity:.35"':'style="padding:6px 12px;font-size:13px;border-radius:7px"')+'>Next \u25B6</button></div>';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><button data-action="go-home">\u2190 Back</button><span style="font-weight:500;font-size:15px">\uD83C\uDFC6 '+teamName+' Rankings</span></div>'+kingBanner+'<div class="sb-wrap"><div class="sb-title">\uD83C\uDFC0 Team Rankings</div>'+periodTabs+(sbPeriod==="week"?weekNav:'<div class="period-label">'+periodLabel+'</div>')+sectionTabs+content+'</div>';
   } catch(e) {
     return '<div class="card" style="padding:20px;text-align:center"><div style="color:#A32D2D;font-size:13px;margin-bottom:8px">Leaderboard error: '+e.message+'</div><button data-action="go-home" style="margin-top:12px">Back</button></div>';
   }
@@ -1165,8 +1174,10 @@ function attachEvents() {
       localEdits={};const newRank=getRank(playerRankPoints(curPlayer));if(newRank.min>oldRank.min){showToast("🎉 New rank: "+newRank.icon+" "+newRank.name+"!");}else{showToast("✓ Numbers saved!");}screen="daily-checkin";checkinTemp={};render(buildDailyCheckin());
     }
 
-    if(a==="sb-period"){sbPeriod=b.dataset.p;render(buildLeaderboard());}
+    if(a==="sb-period"){sbPeriod=b.dataset.p;sbWeekOffset=0;render(buildLeaderboard());}
     if(a==="sb-sec"){sbSection=b.dataset.s;render(buildLeaderboard());}
+    if(a==="sb-week-prev"){sbWeekOffset--;render(buildLeaderboard());}
+    if(a==="sb-week-next"){if(sbWeekOffset<0)sbWeekOffset++;render(buildLeaderboard());}
     if(a==="go-weekly-checkin"){screen="weekly-checkin";checkinTemp={};render(buildWeeklyCheckin());}
     if(a==="skip-checkin"){screen="player";checkinTemp={};render(buildPlayer());}
     if(a==="save-checkin"){if(b.disabled)return;b.disabled=true;const wk=weekKey(),existing=getDailyCheckin(curPlayer,wk,selectedDay)||{};await saveDailyCheckin(curPlayer,wk,selectedDay,checkinTemp.effort??existing.effort??null,checkinTemp.recovery??existing.recovery??null,checkinTemp.feeling??existing.feeling??null);checkinTemp={};showToast("✓ Check-in saved!");screen="player";render(buildPlayer());}
