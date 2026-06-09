@@ -132,6 +132,38 @@ async function loadShots() {
   if(!teamCode)return;
   allShots=await fetchAllTeamRows("shots");
 }
+// One-time repair: data saved before the Sunday-reset update is filed under the old
+// Monday-anchored week key, so it doesn't line up with the new current week. This re-files
+// those rows onto Sunday weeks by their real calendar date. It NEVER deletes an old row
+// until its new copy is confirmed present, so no shots can be lost. Idempotent.
+function isMondayWeek(wk){const d=new Date(wk+"T12:00:00");return d.getDay()===1;}
+function sundayTargetOf(s){const cal=new Date(s.week+"T12:00:00");cal.setDate(cal.getDate()+s.day);const sun=new Date(cal);sun.setDate(cal.getDate()-cal.getDay());return{week:ymd(sun),day:cal.getDay()};}
+async function repairWeekData(){
+  const all=await fetchAllTeamRows("shots");
+  const old=all.filter(function(s){return isMondayWeek(s.week);});
+  if(old.length===0) return {fixed:0,deleted:0,total:all.length,already:true};
+  const keyOf=function(player,week,cat,spot,day){return player+"|"+week+"|"+cat+"|"+spot+"|"+day;};
+  const existing={};
+  all.filter(function(s){return !isMondayWeek(s.week);}).forEach(function(s){existing[keyOf(s.player,s.week,s.category,s.spot,s.day)]=true;});
+  const upserts=[];
+  old.forEach(function(s){
+    const t=sundayTargetOf(s),tk=keyOf(s.player,t.week,s.category,s.spot,t.day);
+    if(!existing[tk]){upserts.push({player:s.player,week:t.week,category:s.category,spot:s.spot,day:t.day,made:s.made,attempts:s.attempts,team_code:teamCode});existing[tk]=true;}
+  });
+  if(upserts.length){
+    const {error}=await db.from("shots").upsert(upserts,{onConflict:"player,week,category,spot,day,team_code"});
+    if(error){console.error("repair upsert error:",error);return {error:error.message};}
+  }
+  const after=await fetchAllTeamRows("shots");
+  const afterKeys={};after.forEach(function(s){afterKeys[keyOf(s.player,s.week,s.category,s.spot,s.day)]=true;});
+  const safeDeletes=old.filter(function(s){const t=sundayTargetOf(s);return afterKeys[keyOf(s.player,t.week,s.category,s.spot,t.day)];}).map(function(s){return s.id;});
+  for(let i=0;i<safeDeletes.length;i+=200){
+    const {error}=await db.from("shots").delete().in("id",safeDeletes.slice(i,i+200));
+    if(error){console.error("repair delete error:",error);break;}
+  }
+  await loadShots();
+  return {fixed:old.length,deleted:safeDeletes.length,total:allShots.length};
+}
 async function loadNotes() {
   if(!teamCode)return;
   allNotes=await fetchAllTeamRows("notes");
@@ -861,6 +893,12 @@ function buildSettings() {
           ${teamCompete ? 'Leave League' : 'Join League'}
         </button>
       </div>
+    </div>
+    <div class="card" style="background:#FFF9E6;border:1px solid #FFD700">
+      <h3>🛠️ Repair Week Data</h3>
+      <p style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">Run this once after switching to Sunday-start weeks. It re-files shots that were logged under the old Monday weeks onto the correct Sunday weeks, so every player shows up in the current week again. It checks each shot lands safely before removing the old copy — nothing is lost. Safe to tap once; running it again does nothing.</p>
+      <button data-action="repair-weeks" class="btn-primary" style="width:100%;padding:12px;font-size:14px;font-weight:500">Repair Week Data</button>
+      <div id="repair-msg" style="margin-top:8px"></div>
     </div>`;
 }
 // ── Player screen ─────────────────────────────
@@ -1034,7 +1072,8 @@ async function buildLeague() {
 }
 function buildLeaderboard() {
   try {
-    const navWeeks=[...new Set([weekKey()].concat(allShots.map(function(s){return s.week;})))].sort().reverse();
+    const pastDataWeeks=[...new Set(allShots.map(function(s){return s.week;}))].filter(function(w){return w<weekKey();}).sort().reverse();
+    const navWeeks=[weekKey()].concat(pastDataWeeks);
     var wIdx=Math.max(0,Math.min(sbWeekOffset,navWeeks.length-1));sbWeekOffset=wIdx;
     const viewWeek=(sbPeriod==="week")?navWeeks[wIdx]:weekKey(),isCurrentWeek=(viewWeek===weekKey());
     const weeks=sbPeriod==="week"?[viewWeek]:weeksForPeriod(sbPeriod),wk=viewWeek,mo=monthKey(),yr=yearKey();
@@ -1144,6 +1183,7 @@ function attachEvents() {
     if(a==="go-lb"){screen="leaderboard";render(buildLeaderboard());}
     if(a==="go-league"){screen="league";buildLeague();}
     if(a==="toggle-compete"){const btn=b;btn.disabled=true;btn.textContent="Saving...";await saveCompete(!teamCompete);showToast(teamCompete?"✅ Joined the League!":"⭕ Left the League");render(buildCoach());}
+    if(a==="repair-weeks"){if(b.disabled)return;b.disabled=true;b.textContent="Repairing...";const msg=document.getElementById("repair-msg");const res=await repairWeekData();if(res&&res.error){if(msg)msg.innerHTML='<span class="err">Repair error: '+h(res.error)+'. Nothing was deleted — try again.</span>';b.disabled=false;b.textContent="Repair Week Data";return;}if(res&&res.already){if(msg)msg.innerHTML='<span class="ok">Already up to date — no old weeks to repair.</span>';showToast("Already up to date");b.disabled=false;b.textContent="Repair Week Data";return;}showToast("✓ Repaired "+res.fixed+" shots");if(msg)msg.innerHTML='<span class="ok">Re-filed '+res.fixed+' shots onto Sunday weeks. Check the leaderboard and player screens.</span>';setTimeout(function(){render(buildCoach());},1200);}
     if(a==="go-summary"){screen="summary";render(buildSummary());}
     if(a==="go-coach"){if(coachOpen){screen="coach";render(buildCoach());}else{pinEntry="";pinErr="";pinMode="coach";screen="pin";render(buildPin());}}
     if(a==="ctab"){coachTab=b.dataset.t;coachViewPlayer=null;render(buildCoach());}
