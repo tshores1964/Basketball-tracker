@@ -130,7 +130,19 @@ async function loadRoster() {
 }
 async function loadShots() {
   if(!teamCode)return;
-  allShots=await fetchAllTeamRows("shots");
+  const rows=await fetchAllTeamRows("shots");
+  // Normalize any rows saved under the old Monday week-numbering onto their real
+  // Sunday week, so the grid, leaderboard, and streaks all agree regardless of which
+  // numbering a shot was saved under. Non-destructive (in memory only).
+  const map={},normFlag={};
+  rows.forEach(function(s){
+    const wasMonday=isMondayWeek(s.week);
+    if(wasMonday){const t=sundayTargetOf(s);s.week=t.week;s.day=t.day;}
+    const k=s.player+"|"+s.week+"|"+s.category+"|"+s.spot+"|"+s.day;
+    if(map[k]===undefined){map[k]=s;normFlag[k]=wasMonday;}
+    else if(normFlag[k]&&!wasMonday){map[k]=s;normFlag[k]=false;} // on clash keep the newer (Sunday-saved) row
+  });
+  allShots=Object.keys(map).map(function(k){return map[k];});
 }
 // One-time repair: data saved before the Sunday-reset update is filed under the old
 // Monday-anchored week key, so it doesn't line up with the new current week. This re-files
