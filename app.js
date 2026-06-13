@@ -583,11 +583,12 @@ function getYouTubeId(text) {
   }
   return null;
 }
-function renderMessageText(text) {
+function renderMessageText(text, textColor) {
+  const col=textColor||"#333";
   const ytId=getYouTubeId(text);
   if(ytId){
     const cleanText=text.replace(/https?:\/\/\S+/g,"").trim();
-    return (cleanText?'<div style="font-size:13px;color:#333;line-height:1.5;margin-bottom:8px">'+h(cleanText)+'</div>':"")
+    return (cleanText?'<div style="font-size:13px;color:'+col+';line-height:1.5;margin-bottom:8px">'+h(cleanText)+'</div>':"")
       +'<div data-action="play-video" data-vid="'+ytId+'" style="cursor:pointer;border-radius:10px;overflow:hidden;position:relative;background:#000">'
       +'<img src="https://img.youtube.com/vi/'+ytId+'/hqdefault.jpg" style="width:100%;display:block;opacity:0.85" />'
       +'<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,0,0,0.85);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center">'
@@ -595,7 +596,7 @@ function renderMessageText(text) {
       +'<div style="position:absolute;bottom:8px;left:10px;font-size:10px;color:#fff;background:rgba(0,0,0,.5);padding:2px 6px;border-radius:4px">Tap to watch</div>'
       +'</div>';
   }
-  return '<div style="font-size:13px;color:#333;line-height:1.5">'+h(text)+'</div>';
+  return '<div style="font-size:13px;color:'+col+';line-height:1.5">'+h(text)+'</div>';
 }
 function buildVideoPlayer(videoId) {
   return '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.92);z-index:999;display:flex;flex-direction:column">'
@@ -918,7 +919,7 @@ function buildPlayer() {
   const name=curPlayer,wk=weekKey(),isMobile=window.innerWidth<700;
   const tot=playerTotals(name,[wk]),playerCats=getPlayerCats(name),unread=getUnreadMessages(name);
   var msgBanners="";
-  unread.forEach(function(m){msgBanners+='<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:10px;padding:12px 14px;margin-bottom:10px"><div style="font-size:10px;color:#FFD700;text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:6px">Message from Coach</div><div style="margin-bottom:10px">'+renderMessageText(m.text)+'</div><button data-action="dismiss-message" data-id="'+m.id+'" class="btn-primary" style="width:100%;padding:8px;font-size:12px;background:#FFD700;color:#1A3A5C;font-weight:500">Got it</button></div>';});
+  unread.forEach(function(m){msgBanners+='<div style="background:linear-gradient(135deg,#1A3A5C,#0C2340);border-radius:10px;padding:12px 14px;margin-bottom:10px"><div style="font-size:10px;color:#FFD700;text-transform:uppercase;letter-spacing:1px;font-weight:500;margin-bottom:6px">Message from Coach</div><div style="margin-bottom:10px">'+renderMessageText(m.text,"#e8eef5")+'</div><button data-action="dismiss-message" data-id="'+m.id+'" class="btn-primary" style="width:100%;padding:8px;font-size:12px;background:#FFD700;color:#1A3A5C;font-weight:500">Got it</button></div>';});
   const pstreak=playerCurrentStreak(name);
   const todayLogged=!!playerLogDates(name)[ymd(new Date())];
   var streakBanner=pstreak>=2?'<div style="background:linear-gradient(135deg,#FFF3E0,#FFE0B2);border:1px solid #FFB74D;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:11px"><div style="font-size:24px">🔥</div><div><div style="font-size:14px;font-weight:500;color:#E65100">'+pstreak+'-day streak!</div><div style="font-size:11px;color:#BF6000">'+(todayLogged?"You logged today — nice work.":"Log today to keep it alive.")+'</div></div></div>':"";
