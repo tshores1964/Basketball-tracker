@@ -711,6 +711,39 @@ function buildCreateTeam() {
     </div>
     <div style="text-align:center;margin-top:8px"><button data-action="go-team-select" style="font-size:12px;color:#888">← Back</button></div>`;
 }
+function shareInviteText(){return "Join our team on Sharpshooter! Open https://basketball-tracker-nine.vercel.app and enter team code: "+teamCode;}
+function buildTeamCreated() {
+  return '<div class="banner"><div class="banner-quote">"What gets measured, improves"</div><div class="banner-sub">Sharpshooter</div></div>'
+    +'<div class="card" style="text-align:center">'
+    +'<div style="font-size:42px;margin-bottom:4px">🏀</div>'
+    +'<h3 style="margin-bottom:4px">Team Created!</h3>'
+    +'<p style="font-size:13px;color:#888;margin-bottom:16px">'+h(teamName)+' is ready. Share this code so your players — and other coaches — can join.</p>'
+    +'<div style="font-size:12px;color:#888;margin-bottom:2px">YOUR TEAM CODE</div>'
+    +'<div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#2E75B6;margin-bottom:16px">'+h(teamCode)+'</div>'
+    +'<div class="row-flex" style="gap:8px;margin-bottom:6px">'
+    +'<button onclick="copyTeamCode()" class="btn-primary" style="flex:1">📋 Copy</button>'
+    +'<button onclick="shareTeamCode()" class="btn-primary" style="flex:1">📤 Share</button>'
+    +'</div>'
+    +'<div id="share-feedback" style="font-size:12px;color:#27500A;min-height:16px;margin-bottom:12px"></div>'
+    +'<button data-action="created-continue" class="btn-primary" style="width:100%;padding:11px">Continue → Add Players</button>'
+    +'</div>'
+    +'<div class="card" style="background:#F7F7F7"><div style="font-size:12px;color:#888;line-height:1.55">'
+    +'<strong>How players join:</strong> they open the app, tap “Enter your team code,” and type <strong>'+h(teamCode)+'</strong>. You’ll add their names on the next screen.</div></div>';
+}
+function copyTeamCode(){
+  const fb=document.getElementById("share-feedback");
+  const txt=shareInviteText();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){if(fb)fb.textContent="Copied — paste it to your players.";},function(){if(fb)fb.textContent="Code: "+teamCode;});
+  } else { if(fb)fb.textContent="Code: "+teamCode; }
+}
+function shareTeamCode(){
+  const fb=document.getElementById("share-feedback");
+  const txt=shareInviteText();
+  if(navigator.share){
+    navigator.share({title:"Sharpshooter",text:txt}).then(function(){if(fb)fb.textContent="Shared!";}).catch(function(){});
+  } else { copyTeamCode(); }
+}
 function buildHome() {
   const btns=roster.length===0
     ?'<p style="color:#888;font-size:13px">No players yet — coach can add players in the coach panel.</p>'
@@ -1157,7 +1190,7 @@ async function handleCreateTeam() {
   if(err){if(msg)msg.innerHTML=`<span class="err">${err}</span>`;if(btn){btn.disabled=false;btn.textContent="Create Team";}return;}
   teamCode=code;teamName=name;appPin=pin;saveTeam(code);
   await loadRoster();await loadShots();
-  screen="coach";coachOpen=true;coachTab="roster";render(buildCoach());
+  screen="team-created";render(buildTeamCreated());
 }
 function handleNewTeam(){screen="create-team";render(buildCreateTeam());}
 function handleSwitchTeam(){clearTeam();teamCode=null;teamName="";roster=[];allShots=[];allPlayerPins=[];allCoachComments=[];allMessages=[];allMessageReads=[];allTeamCategories=[];allPlayerCategories=[];CATS=[...DEFAULT_CATS];teamCompete=false;leagueShots=[];leagueRosters={};leagueTeams=[];screen="team-select";render(buildTeamSelect());}
@@ -1168,6 +1201,7 @@ function attachEvents() {
     if(!b)return;
     const a=b.dataset.action;
     if(a==="go-team-select"){screen="team-select";render(buildTeamSelect());}
+    if(a==="created-continue"){screen="coach";coachOpen=true;coachTab="roster";render(buildCoach());}
     if(a==="onboard-next"){onboardStep++;render(buildOnboarding());}
     if(a==="onboard-back"){onboardStep--;render(buildOnboarding());}
     if(a==="onboard-skip"||a==="onboard-done"){markOnboardingSeen();onboardStep=0;if(teamCode){screen="home";render(buildHome());}else{screen="team-select";render(buildTeamSelect());}}
