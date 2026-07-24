@@ -551,10 +551,10 @@ function weeksForPeriod(period) {
 }
 function playerWeightedMakes(player,weeks) {
   let total=0;
-  CATS.forEach(cat=>{
-    const w=getWeight(cat);
-    const shots=allShots.filter(s=>s.player===player&&weeks.includes(s.week)&&s.category===cat);
-    total+=shots.reduce((a,s)=>a+(s.made||0),0)*w;
+  const pCats=getPlayerCats(player);
+  pCats.forEach(pc=>{
+    const shots=allShots.filter(s=>s.player===player&&weeks.includes(s.week)&&s.category===pc.name);
+    total+=shots.reduce((a,s)=>a+(s.made||0),0)*pc.weight;
   }); return total;
 }
 function getShot(player,week,cat,spot,day) {
